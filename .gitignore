@@ -1,0 +1,12 @@
+.env
+*.session
+*.session-journal
+groups.json
+moderation.json
+users.json
+routes.json
+aggregator.json
+*.tmp
+.venv/
+__pycache__/
+.pytest_cache/
