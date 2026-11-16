@@ -16,6 +16,7 @@ Taksi guruhlaridagi yo'lovchi xabarlarini aniqlab, haydovchilar guruhiga e'lon q
 | `database/crud.py` | Bazaga barcha murojaatlar |
 | `services/crypto.py` | Fernet: `SESSION_SECRET` yoki avtomatik `fernet.key` |
 | `services/userbot_auth.py` | Haydovchi akkauntini bot ichida ulash: telefon → kod (`1 2 3 4 5`) → 2FA → StringSession shifrlanib saqlanadi |
+| `services/ad_format.py` | Haydovchi e'lonini ajratadi (marshrut, oraliq shaharlar, vaqt, joy, mashina, narx, telefonlar, pochta/ayol/oldi bo'sh) va bir xil formatga keltiradi; AI bo'sh maydonlarni to'ldiradi |
 | `services/broadcaster.py` | `manager`: ko'p sessiya. Har akkaunt tanlangan guruhlarini O'QIYDI (→ pipeline) va TARQATADI (fon vazifa, interval, anti-spam, FloodWait/forbidden/revoked) |
 | `handlers/driver_cabinet.py` | Haydovchi kabineti (`/driver`, `role:driver`): ulash FSM, guruh tanlash (sahifalangan, `dc:*`), e'lon, interval 15/30/60, 🚀/🛑, hisobot, uzish |
 | `handlers/admin_panel.py` | `/admin` (faqat `ADMIN_IDS`, `ap:*`): statistika, haydovchilar/obuna/blok/sessiya, yo'nalishlar→yopiq guruh, sozlamalar + Global Stop, umumiy xabarnoma |
@@ -26,7 +27,7 @@ Taksi guruhlaridagi yo'lovchi xabarlarini aniqlab, haydovchilar guruhiga e'lon q
 | `relay.py` | Haydovchi va yo'lovchi bot orqali yozishuvi |
 | `pipeline.py` | Tahlil, AI, dedup, navbat, `render`, `_deliver` (tugma rad etilsa tugmasiz yuboradi) |
 | `nlp.py` | Kalit so'zlar (`PASSENGER_KW`, `DRIVER_KW`), `CITIES`, marshrut, vaqt, telefon |
-| `ai.py` | OpenAI-mos API (Groq), javobni `clean()` tekshiradi |
+| `ai.py` | OpenAI-mos API (Groq). `classify()`: yangi prompt + 5 misol, `confidence`, 1 soatlik kesh, 429 da qayta urinish, mustahkam JSON. `extract_ad()`: haydovchi e'loni maydonlari |
 | `store.py` | `groups.json` (kuzatiladigan guruhlar) |
 | `config.py` | `.env`, `validate()` |
 | `tests/` | `test_nlp.py`, `test_store.py`, `e2e_fake_telegram.py` (soxta Telegram+AI server) |
@@ -39,7 +40,8 @@ Routerlar tartibi muhim: `admin, admin_panel, moderation, panel, driver_cabinet,
 - **Tugmali panel (2026-11-16):** `/menu` (admin, shaxsiy chat). Tugmalar: «➕ Guruhga/Kanalga qo'shish» (Telegram deep-link `?startgroup`/`?startchannel`), «🔗 Havola/forward bilan qo'shish» (FSM: @username, t.me, ID yoki forward), «📋 Ro'yxat» (❌ tugmalar), «👤 Userbot holati». Slash buyruqlar zaxira. `add_watch()` — `/addgroup` va panel uchun umumiy.
 - **Admin buyruqlari:** `/add` (guruh ichida), `/addgroup @a t.me/b -100123`, `/delgroup`, `/groups` (❌ tugma bilan), `/stats`, `/help`. `/id` hamma uchun.
 - **Admin kim:** `ADMIN_IDS` yoki haydovchilar guruhi egasi/adminlari.
-- **Tasniflash:** kalit so'zlar, keyin noaniq va taksiga aloqador xabarlar AI'ga. `AI_API_KEY` bo'sh bo'lsa noaniq xabar tashlanadi.
+- **Tasniflash (2026-11-17):** kalit so'zlar → `pipeline.decide`. AI'ga boradi: (1) noaniq xabar, (2) «yo'lovchi» chiqqan-u haydovchi belgisi ham bor (tekshiruv). AI ishonchi ≥ `AI_MIN_CONFIDENCE` (0.6) bo'lsa qabul qilinadi, tekshiruvda boshqacha desa AI ustun (`stats.ai_overrides`). AI ishlamasa kalit so'z natijasi qoladi. `AI_API_KEY` bo'sh bo'lsa noaniq xabar tashlanadi. Log: `[label/kw|ai]`.
+- **E'lon formatlash (2026-11-17):** kabinetda «✍️ E'lon matni» → `ad_format.build` → oldindan ko'rish: «✅ Shu ko'rinishda» / «📝 O'z matnim» / «✏️ Qayta yozish». Userbot e'lonni `parse_mode=None` bilan yuboradi.
 - **E'lon:** marshrut, vaqt, kishi soni, telefon, profil, manba havolasi, «✅ Oldim», «💬 Yozish».
 - **Dedup:** 45 daqiqa. Yetkazilmagan e'lon dublikat sanalmaydi.
 - **Navbat:** ~18 xabar/daqiqa, tarmoq xatosida qayta urinish.
@@ -57,15 +59,15 @@ Routerlar tartibi muhim: `admin, admin_panel, moderation, panel, driver_cabinet,
 - **Rejimlar:** `MODE=bot|userbot|both`. Userbot `/addgroup` bilan ochiq guruhga o'zi qo'shiladi. Taklif havolasi qo'llab-quvvatlanmaydi.
 
 ## `.env` kalitlari
-`MODE, BOT_TOKEN, DRIVERS_CHAT_ID, SOURCE_CHATS, ADMIN_IDS, GROUPS_FILE, MOD_FILE, USERS_FILE, ROUTES_FILE, ROUTE_FILTER_STRICT, BROADCAST_MAX_PER_DAY, DB_FILE, SESSION_SECRET, FERNET_KEY_FILE, API_ID, API_HASH, SESSION_NAME, AI_API_KEY, AI_BASE_URL, AI_MODEL, DEDUP_MINUTES, SEND_INTERVAL_SEC, MAX_AGE_MINUTES, ORDER_COOLDOWN_SEC, OFFER_IN_GROUPS, USE_SYSTEM_CA`
+`MODE, BOT_TOKEN, DRIVERS_CHAT_ID, SOURCE_CHATS, ADMIN_IDS, GROUPS_FILE, MOD_FILE, USERS_FILE, ROUTES_FILE, ROUTE_FILTER_STRICT, BROADCAST_MAX_PER_DAY, AI_MIN_CONFIDENCE, DB_FILE, SESSION_SECRET, FERNET_KEY_FILE, API_ID, API_HASH, SESSION_NAME, AI_API_KEY, AI_BASE_URL, AI_MODEL, DEDUP_MINUTES, SEND_INTERVAL_SEC, MAX_AGE_MINUTES, ORDER_COOLDOWN_SEC, OFFER_IN_GROUPS, USE_SYSTEM_CA`
 
 `.env` qiymatlarini, tokenni, `*.session`, `fernet.key` va `taxi.db` ni chatga chiqarmang.
 
 ## Ishga tushirish va tekshirish
 ```bash
 .venv/Scripts/python main.py
-.venv/Scripts/python -m pytest -q tests        # 85 ta
-.venv/Scripts/python tests/e2e_fake_telegram.py # 146 ta, real Telegram'ga ulanmaydi
+.venv/Scripts/python -m pytest -q tests        # 98 ta
+.venv/Scripts/python tests/e2e_fake_telegram.py # 148 ta, real Telegram'ga ulanmaydi
 ```
 Bitta token bilan bir vaqtda faqat bitta nusxa ishlashi kerak.
 

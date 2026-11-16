@@ -60,5 +60,22 @@ def test_ai_non_dict_rejected(data):
 
 def test_ai_values_sanitized():
     r = clean({"label": "hack", "from": 123, "to": "Buxoro", "seats": "<x>", "time": ["a"]})
-    assert r == {"label": "unknown", "from": None, "to": "Buxoro", "seats": None, "time": None}
+    assert r == {"label": "unknown", "confidence": 0.7, "from": None, "to": "Buxoro", "seats": None, "time": None}
     assert clean({"label": "passenger", "seats": "3"})["seats"] == 3
+    assert clean({"label": "driver", "confidence": 7})["confidence"] == 1.0          # chegaradan tashqari
+    assert clean({"label": "driver", "confidence": "yuqori"})["confidence"] == 0.7
+
+
+def test_ai_json_parse():
+    from ai import parse_json
+    assert parse_json('{"label": "driver"}') == {"label": "driver"}
+    assert parse_json('Mana javob: ```json\n{"label": "passenger"}\n```') == {"label": "passenger"}
+    assert parse_json("json yo'q") is None
+
+
+def test_ai_ad_sanitized():
+    from ai import clean_ad
+    d = clean_ad({"from": "Termiz", "stops": ["Angor", 5, ""], "seats": 99, "phones": ["+998901112233"],
+                  "pochta": "ha", "ayol": True})
+    assert d["stops"] == ["Angor"] and d["seats"] is None and d["phones"] == ["+998901112233"]
+    assert d["pochta"] is False and d["ayol"] is True                               # faqat aniq true

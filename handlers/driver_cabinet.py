@@ -16,6 +16,7 @@ from aiogram.types import (CallbackQuery, InlineKeyboardButton, InlineKeyboardMa
 
 import config
 from database import crud
+from services import ad_format
 from services import userbot_auth as auth
 from services.broadcaster import manager
 
@@ -47,6 +48,7 @@ class Auth(StatesGroup):
 
 class AdText(StatesGroup):
     waiting = State()
+    confirm = State()
 
 
 HELP_TEXT = (
@@ -142,8 +144,8 @@ async def on_connect(msg: Message, state: FSMContext):
         reply_markup=_cancel_kb([KeyboardButton(text="📱 Raqamni yuborish", request_contact=True)]))
 
 
-@router.message(StateFilter(Auth.phone, Auth.code, Auth.password, AdText.waiting), F.text == BTN_CANCEL)
-@router.message(StateFilter(Auth.phone, Auth.code, Auth.password, AdText.waiting), Command("cancel"))
+@router.message(StateFilter(Auth.phone, Auth.code, Auth.password, AdText.waiting, AdText.confirm), F.text == BTN_CANCEL)
+@router.message(StateFilter(Auth.phone, Auth.code, Auth.password, AdText.waiting, AdText.confirm), Command("cancel"))
 async def on_cancel(msg: Message, state: FSMContext):
     await auth.cancel(msg.from_user.id)
     await state.clear()
@@ -370,10 +372,58 @@ async def on_text_set(msg: Message, state: FSMContext):
     if len(text) > 1000:
         await msg.answer("Matn juda uzun (1000 belgigacha).")
         return
-    crud.set_ad_text(msg.from_user.id, text)
+    wait = await msg.answer("⏳ E'lon tahlil qilinmoqda...", reply_markup=ReplyKeyboardRemove())
+    pretty, _ = await ad_format.build(text)
+    try:
+        await wait.delete()
+    except TelegramAPIError:
+        pass
+    if not pretty or pretty == text:
+        crud.set_ad_text(msg.from_user.id, text)
+        await state.clear()
+        await msg.answer("✅ E'lon matni saqlandi." + ("" if pretty else
+                         "\n\nℹ️ Yo'nalish yoki telefonni aniqlay olmadim, matn o'zgarishsiz saqlandi."))
+        await show_menu(msg, msg.from_user.id)
+        return
+    await state.update_data(raw=text, pretty=pretty)
+    await state.set_state(AdText.confirm)
+    await msg.answer(
+        "✨ E'loningizni shunday formatladim — guruhlarga shu ko'rinishda chiqadi:\n\n"
+        f"<blockquote>{html.escape(pretty, quote=False)}</blockquote>\n\n"
+        "Ma'lumotlarni tekshiring. Xato bo'lsa «📝 O'z matnim» ni tanlang.",
+        parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [B(text="✅ Shu ko'rinishda saqlash", callback_data="dc:ad:pretty")],
+            [B(text="📝 O'z matnim qolsin", callback_data="dc:ad:raw")],
+            [B(text="✏️ Qayta yozish", callback_data="dc:ad:redo")]]))
+
+
+@router.callback_query(F.data.startswith("dc:ad:"), StateFilter(AdText.confirm))
+async def on_ad_choice(cb: CallbackQuery, state: FSMContext):
+    choice, d = cb.data[6:], await state.get_data()
+    if choice == "redo":
+        await state.set_state(AdText.waiting)
+        await _edit(cb, "✏️ E'lon matnini qaytadan yuboring.", None)
+        await cb.answer()
+        return
+    text = d.get("pretty") if choice == "pretty" else d.get("raw")
+    if not text:
+        await cb.answer("Eskirgan", show_alert=True)
+        return
+    crud.set_ad_text(cb.from_user.id, text)
     await state.clear()
-    await msg.answer("✅ E'lon matni saqlandi.")
-    await show_menu(msg, msg.from_user.id)
+    await _edit(cb, "✅ E'lon matni saqlandi" + (" (formatlangan)." if choice == "pretty" else " (asl holida)."), None)
+    await cb.answer()
+    await show_menu(cb.message, cb.from_user.id)
+
+
+@router.callback_query(F.data.startswith("dc:ad:"))
+async def on_ad_stale(cb: CallbackQuery):
+    await cb.answer("Bu tanlov eskirgan. «✍️ E'lon matni» ni qayta bosing.", show_alert=True)
+
+
+@router.message(StateFilter(AdText.confirm))
+async def on_ad_confirm_text(msg: Message):
+    await msg.answer("Yuqoridagi tugmalardan birini tanlang yoki «❌ Bekor qilish».", reply_markup=_cancel_kb())
 
 
 # ---------- Interval ----------

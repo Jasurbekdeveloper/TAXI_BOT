@@ -144,8 +144,9 @@ def canon_city(name):
     return name
 
 
-def find_route(text: str):
-    found = []  # (pos, city, role)
+def _city_hits(text: str) -> list[tuple[int, str, str | None]]:
+    """Matndagi shaharlar tartib bilan: (pozitsiya, shahar, "from"|"to"|None)."""
+    found = []
     prev = ""
     for m in re.finditer(r"\w+", text):
         tok = m.group()
@@ -163,6 +164,16 @@ def find_route(text: str):
                 found.append((m.start(), city, role))
                 break
         prev = tok
+    return found
+
+
+def find_cities(text: str) -> list[str]:
+    """Normalizatsiya qilingan matndagi barcha shaharlar, takrorsiz, uchragan tartibida."""
+    return list(dict.fromkeys(c for _, c, _ in _city_hits(text)))
+
+
+def find_route(text: str):
+    found = _city_hits(text)
     frm = next((c for _, c, r in found if r == "from"), None)
     to = next((c for _, c, r in found if r == "to"), None)
     rest = [c for _, c, r in found if r is None and c not in (frm, to)]

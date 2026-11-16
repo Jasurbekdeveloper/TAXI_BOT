@@ -19,7 +19,7 @@ from nlp import analyze, canon_city, normalize, worth_ai
 
 log = logging.getLogger(__name__)
 stats = {"seen": 0, "passenger": 0, "driver": 0, "unknown": 0, "ai_calls": 0, "ai_errors": 0,
-         "dup": 0, "sent": 0, "failed": 0, "orders": 0, "relayed": 0}
+         "ai_overrides": 0, "dup": 0, "sent": 0, "failed": 0, "orders": 0, "relayed": 0}
 MAX_ATTEMPTS = 4
 
 
@@ -143,6 +143,34 @@ async def submit_order(user_id, username, full_name, d: dict, done: asyncio.Futu
                              chat_id=routes.target_chat(canon_city(d["frm"]), canon_city(d["to"]))))
 
 
+def needs_ai(raw: str, p) -> bool:
+    """AI'ga yuborish kerakmi: kalit so'zlar noaniq bo'lsa, yoki "yo'lovchi" chiqqan-u, matnda haydovchi
+    belgilari ham bo'lsa (noto'g'ri e'lon maxfiy guruhga tushmasligi uchun). "Salom" kabilar limitni yemaydi."""
+    if not (config.AI_API_KEY and worth_ai(raw, p)):
+        return False
+    return not p.confident or (p.label == "passenger" and p.scores.get("driver", 0) > 0)
+
+
+async def decide(raw: str, p) -> tuple[str, str, dict | None]:
+    """Xabar egasi kim: (label, manba, AI javobi). manba: "kw" (kalit so'zlar) yoki "ai"."""
+    if not needs_ai(raw, p):
+        return p.label, "kw", None
+    stats["ai_calls"] += 1
+    res = await ai.classify(raw)
+    if not res:
+        stats["ai_errors"] += 1
+        return p.label, "kw", None              # AI ishlamasa: kalit so'z natijasi (noaniq bo'lsa tashlanadi)
+    sure = res["confidence"] >= config.AI_MIN_CONFIDENCE
+    if p.confident:                             # tekshiruv: AI ishonch bilan boshqacha desa, AI ustun
+        if sure and res["label"] != p.label:
+            stats["ai_overrides"] += 1
+            log.info("AI tuzatdi: %s -> %s (%.2f) | %s", p.label, res["label"], res["confidence"],
+                     raw[:60].replace("\n", " "))
+            return res["label"], "ai", res
+        return p.label, "ai", res
+    return (res["label"] if sure else "unknown"), "ai", res
+
+
 async def process(m: Incoming) -> str | None:
     """Xabar turini qaytaradi: passenger, driver, unknown yoki other."""
     stats["seen"] += 1
@@ -151,21 +179,15 @@ async def process(m: Incoming) -> str | None:
     p = analyze(m.text)
     label, frm, to, seats, when = p.label, p.frm, p.to, p.seats, p.when
 
-    # Faqat noaniq va taksiga aloqasi bor xabarlar AI'ga boradi ("salom" kabilar limitni yemasin)
-    if not p.confident and config.AI_API_KEY and worth_ai(m.text, p):
-        stats["ai_calls"] += 1
-        res = await ai.classify(m.text)
-        if res:
-            label = res["label"]
-            frm = frm or canon_city(res["from"])
-            to = to or canon_city(res["to"])
-            seats = seats or res["seats"]
-            when = when or res["time"]
-        else:
-            stats["ai_errors"] += 1
+    label, src, res = await decide(m.text, p)
+    if res:
+        frm = frm or canon_city(res.get("from"))
+        to = to or canon_city(res.get("to"))
+        seats = seats or res.get("seats")
+        when = when or res.get("time")
 
     stats[label if label in ("passenger", "driver") else "unknown"] += 1
-    log.info("[%s] %s | %s→%s | %s", label, m.chat_title, frm, to, m.text[:60].replace("\n", " "))
+    log.info("[%s/%s] %s | %s→%s | %s", label, src, m.chat_title, frm, to, m.text[:60].replace("\n", " "))
     if label != "passenger":
         return label
     if not routes.allowed(frm, to):     # xizmat qilinmaydigan yo'nalish: maxfiy guruhga yuborilmaydi

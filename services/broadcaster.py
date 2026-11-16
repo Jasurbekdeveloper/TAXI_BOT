@@ -284,7 +284,8 @@ class Manager:
                 await self.sleep(random.uniform(gap, gap + 7))
             for attempt in (1, 2):
                 try:
-                    await client.send_message(cid, text)
+                    # parse_mode=None: haydovchi matnidagi * _ ` markdown deb buzilmasin
+                    await client.send_message(cid, text, parse_mode=None, link_preview=False)
                     crud.record_post(uid, cid)
                     ok += 1
                 except Exception as e:

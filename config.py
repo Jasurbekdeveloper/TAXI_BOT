@@ -73,6 +73,8 @@ SESSION_NAME = os.getenv("SESSION_NAME", "userbot").strip() or "userbot"
 AI_API_KEY = os.getenv("AI_API_KEY", "").strip()
 AI_BASE_URL = os.getenv("AI_BASE_URL", "https://api.groq.com/openai/v1").strip()
 AI_MODEL = os.getenv("AI_MODEL", "").strip() or "openai/gpt-oss-20b"
+# AI shundan past ishonch bilan javob bersa, uning natijasi qabul qilinmaydi (noaniq xabar tashlanadi)
+AI_MIN_CONFIDENCE = _float("AI_MIN_CONFIDENCE", 0.6)
 
 DEDUP_MINUTES = _int("DEDUP_MINUTES", 45)
 SEND_INTERVAL_SEC = _float("SEND_INTERVAL_SEC", 3.2)  # ~18 xabar/daqiqa

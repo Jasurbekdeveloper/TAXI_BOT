@@ -29,7 +29,7 @@ class Client:
         self.sent = []
         self.disconnected = False
 
-    async def send_message(self, cid, text):
+    async def send_message(self, cid, text, **kw):
         q = self.errors.get(cid)
         if q:
             raise q.pop(0)

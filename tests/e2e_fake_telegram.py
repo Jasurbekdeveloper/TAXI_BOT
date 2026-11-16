@@ -57,7 +57,7 @@ fail = []       # navbatdagi sendMessage javoblari: 400 yoki 500
 stored = {}
 ai_calls = [0]
 uid = [1]
-ALLOWED = re.compile(r"</?(b|i|a|code)(\s[^>]*)?>")
+ALLOWED = re.compile(r"</?(b|i|a|code|blockquote)(\s[^>]*)?>")
 ADMIN_CM = {"status": "administrator", "user": {"id": 99, "is_bot": True, "first_name": "b"}, "can_be_edited": False,
             "is_anonymous": False, "can_manage_chat": True, "can_delete_messages": True, "can_manage_video_chats": True,
             "can_restrict_members": True, "can_promote_members": False, "can_change_info": True, "can_invite_users": True,
@@ -157,7 +157,7 @@ async def api(req):
 
 async def ai(req):
     ai_calls[0] += 1
-    t = (await req.json())["messages"][1]["content"]
+    t = (await req.json())["messages"][-1]["content"]
     r = {"Nukus AI_GOOD": {"label": "passenger", "from": "Нукус", "to": "Хива", "seats": 1, "time": None},
          "Nukus AI_INT": {"label": "passenger", "from": 123, "to": "Buxoro", "seats": None, "time": None},
          "Nukus AI_LIST": [{"label": "passenger"}],
@@ -613,7 +613,8 @@ async def run():
             for i, t in ((-100801, "Termiz Toshkent Taksi"), (-100802, "Denov taksi"), (-1009999, "Yopiq guruh")):
                 yield SimpleNamespace(id=i, title=t, is_group=True)
 
-        async def send_message(self, chat_id, text):
+        async def send_message(self, chat_id, text, **kw):
+            self.kw = kw
             if chat_id == -100802:
                 raise ChatWriteForbiddenError()
             self.sent.append((chat_id, text))
@@ -673,8 +674,19 @@ async def run():
           len(_crud.selected_groups(DRV)) == 2 and _mgr.selected[DRV] == {-100801, -100802}, _mgr.selected)
 
     await step(msg(dc.BTN_TEXT, chat=DV, user=U(DRV))); new()
+    await step(msg("termizdan toshkentga bugun 18:00 da chiqamiz 3 joy bor oldi bo'sh +998901112233",
+                   chat=DV, user=U(DRV))); r = new()
+    check("e'lon formatlanib, tasdiqlash so'raldi", any("TERMIZ ➜ TOSHKENT" in x[1] and "+998 90 111 22 33" in x[1]
+                                                        and "Oldi o'rindiq" in x[1] for x in r)
+          and "dc:ad:pretty" in markups[-1][1], r)
+    await step(dcb("dc:ad:pretty"))
+    ad = _crud.get_session(DRV)["ad_text"]
+    check("formatlangan e'lon saqlandi", ad.startswith("🚕 TERMIZ ➜ TOSHKENT") and "💺 3 ta bo'sh joy" in ad
+          and "🕕 Bugun 18:00" in ad, ad)
+    await step(msg(dc.BTN_TEXT, chat=DV, user=U(DRV))); new()
     await step(msg("Termiz → Toshkent, bugun 18:00, 3 joy bor", chat=DV, user=U(DRV))); new()
-    check("e'lon matni saqlandi", _crud.get_session(DRV)["ad_text"].startswith("Termiz"))
+    await step(dcb("dc:ad:raw"))
+    check("asl matn tanlansa o'zgarishsiz saqlanadi", _crud.get_session(DRV)["ad_text"] == "Termiz → Toshkent, bugun 18:00, 3 joy bor")
     await step(msg(dc.BTN_START, chat=DV, user=U(DRV))); r = new()
     check("ruxsatsiz rassilka yoqilmaydi", r and "ruxsat" in r[-1][1] and not _mgr.is_running(DRV), r)
 
@@ -700,7 +712,7 @@ async def run():
           and any(dc.BTN_STOP in k for k in kbs), (sent[mark[0]:], kbs))
     await asyncio.sleep(.5); r = new()
     check("e'lon guruhga yuborildi, yozib bo'lmagan guruh tanlovdan chiqdi, haydovchi ogohlantirildi",
-          any(c == -100801 for c, _ in fc.sent) and _crud.selected_groups(DRV) == [(-100801, "Termiz Toshkent Taksi")]
+          any(c == -100801 for c, _ in fc.sent) and fc.kw.get("parse_mode", 1) is None and _crud.selected_groups(DRV) == [(-100801, "Termiz Toshkent Taksi")]
           and any(str(x[0]) == "70" and "tanlovdan chiqarildi" in x[1] for x in r), (fc.sent, r))
 
     # O'qish: haydovchi tanlagan guruhdagi yo'lovchi e'loni yopiq guruhga tushadi (bir marta)
