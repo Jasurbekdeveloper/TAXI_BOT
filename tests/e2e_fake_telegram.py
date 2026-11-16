@@ -8,7 +8,7 @@ os.environ.update(BOT_TOKEN="123456:TESTTOKENTESTTOKENTESTTOKEN", DRIVERS_CHAT_I
                   AI_BASE_URL="http://127.0.0.1:18081/v1", GROUPS_FILE=str(tmp / "groups.json"), ADMIN_IDS="1",
                   MOD_FILE=str(tmp / "moderation.json"), USERS_FILE=str(tmp / "users.json"),
                   ROUTES_FILE=str(tmp / "routes.json"), DB_FILE=str(tmp / "taxi.db"),
-                  FERNET_KEY_FILE=str(tmp / "fernet.key"), SESSION_SECRET="", API_ID="1", API_HASH="x",
+                  FERNET_KEY_FILE=str(tmp / "fernet.key"), SESSION_SECRET="", API_ID="1", API_HASH="x", ADMIN_USERNAME="@admin_jasur",
                   BROADCAST_MAX_PER_DAY="2")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from aiohttp import web
@@ -673,6 +673,22 @@ async def run():
     check("ikki guruh tanlandi va o'qish keshiga tushdi",
           len(_crud.selected_groups(DRV)) == 2 and _mgr.selected[DRV] == {-100801, -100802}, _mgr.selected)
 
+    # Guruhlarni nomi bo'yicha qidirish (kirillcha yozilsa ham lotin nom topiladi)
+    await step(dcb("dc:search")); new()
+    await step(msg("денов", chat=DV, user=U(DRV))); r = new()
+    check("qidiruv: faqat mos guruh chiqadi", r and "1 ta topildi" in r[-1][1] and "dc:g:-100802" in markups[-1][1]
+          and "dc:g:-100801" not in markups[-1][1] and "dc:sclear" in markups[-1][1], (r, markups[-1:]))
+    await step(dcb("dc:g:-100802:0"))
+    check("qidiruv ichida tanlash ishlaydi, filtr saqlanadi", len(_crud.selected_groups(DRV)) == 1
+          and "1 ta topildi" in stored.get("t", ""), stored.get("t"))
+    await step(dcb("dc:g:-100802:0"))
+    await step(dcb("dc:search")); new()
+    await step(msg("yo'q guruh", chat=DV, user=U(DRV))); r = new()
+    check("qidiruv: topilmadi xabari", r and "topilmadi" in r[-1][1], r)
+    await step(dcb("dc:sclear"))
+    check("qidiruv tozalandi: hamma guruh", "topildi" not in stored.get("t", "x") and "Guruhlarni tanlang" in stored.get("t", ""),
+          stored.get("t"))
+
     await step(msg(dc.BTN_TEXT, chat=DV, user=U(DRV))); new()
     await step(msg("termizdan toshkentga bugun 18:00 da chiqamiz 3 joy bor oldi bo'sh +998901112233",
                    chat=DV, user=U(DRV))); r = new()
@@ -688,7 +704,8 @@ async def run():
     await step(dcb("dc:ad:raw"))
     check("asl matn tanlansa o'zgarishsiz saqlanadi", _crud.get_session(DRV)["ad_text"] == "Termiz → Toshkent, bugun 18:00, 3 joy bor")
     await step(msg(dc.BTN_START, chat=DV, user=U(DRV))); r = new()
-    check("ruxsatsiz rassilka yoqilmaydi", r and "ruxsat" in r[-1][1] and not _mgr.is_running(DRV), r)
+    check("ruxsatsiz rassilka yoqilmaydi, admin bilan bog'lanish tugmasi", r and "ruxsat" in r[-1][1]
+          and not _mgr.is_running(DRV) and "https://t.me/admin_jasur" in markups[-1][1], (r, markups[-1:]))
 
     # ---------- /admin ----------
     await step(msg("/admin", chat=PRIV(STRANGER), user=U(STRANGER))); check("begona /admin jim", not new())

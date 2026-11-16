@@ -45,6 +45,8 @@ DRIVERS_CHAT_ID = _int("DRIVERS_CHAT_ID")
 SOURCE_CHATS = _list("SOURCE_CHATS")
 # Haydovchilar guruhi adminlari avtomatik bot admini. Bu yerda qo'shimcha user ID lar berish mumkin.
 ADMIN_IDS = {x for x in _list("ADMIN_IDS") if isinstance(x, int)}
+# «Admin bilan bog'lanish» tugmasi uchun @username. Bo'sh bo'lsa ADMIN_IDS dagi birinchi adminning username'i olinadi
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "").strip().lstrip("@")
 GROUPS_FILE = Path(os.getenv("GROUPS_FILE", "").strip() or BASE_DIR / "groups.json")
 # Guruh moderatsiyasi sozlamalari va hisoblagichlari
 MOD_FILE = Path(os.getenv("MOD_FILE", "").strip() or BASE_DIR / "moderation.json")

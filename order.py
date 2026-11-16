@@ -177,7 +177,8 @@ async def on_role_driver(cb: CallbackQuery, state: FSMContext):
     await state.clear()
     userstore.set_role(cb.from_user.id, "driver")
     await cb.answer()
-    await _edit_or_send(cb, DRIVER_INFO, None, html_=True)
+    from handlers.common import contact_kb
+    await _edit_or_send(cb, DRIVER_INFO, contact_kb(), html_=True)
     await driver_cabinet.show_menu(cb.message, cb.from_user.id)
 
 

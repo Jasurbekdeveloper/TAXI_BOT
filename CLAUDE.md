@@ -20,6 +20,7 @@ Taksi guruhlaridagi yo'lovchi xabarlarini aniqlab, haydovchilar guruhiga e'lon q
 | `services/broadcaster.py` | `manager`: ko'p sessiya. Har akkaunt tanlangan guruhlarini O'QIYDI (→ pipeline) va TARQATADI (fon vazifa, interval, anti-spam, FloodWait/forbidden/revoked) |
 | `handlers/driver_cabinet.py` | Haydovchi kabineti (`/driver`, `role:driver`): ulash FSM, guruh tanlash (sahifalangan, `dc:*`), e'lon, interval 15/30/60, 🚀/🛑, hisobot, uzish |
 | `handlers/admin_panel.py` | `/admin` (faqat `ADMIN_IDS`, `ap:*`): statistika, haydovchilar/obuna/blok/sessiya, yo'nalishlar→yopiq guruh, sozlamalar + Global Stop, umumiy xabarnoma |
+| `handlers/common.py` | «👤 Admin bilan bog'lanish» tugmasi: `ADMIN_USERNAME` yoki birinchi adminning bazadagi @username'i (tg://user ishlatilmaydi) |
 | `handlers/middlewares.py` | `TrackUsers`: har shaxsiy xabarda foydalanuvchini bazaga yozadi, bloklanganni to'xtatadi |
 | `userstore.py` | Foydalanuvchi roli — endi bazadagi `users` jadvaliga o'ram |
 | `routes.py` | Yo'nalishlar (bazada). `allowed()`, `target_chat()` (Smart Routing), `closed_chat_ids()`, `parse_pair()` |
@@ -41,6 +42,7 @@ Routerlar tartibi muhim: `admin, admin_panel, moderation, panel, driver_cabinet,
 - **Admin buyruqlari:** `/add` (guruh ichida), `/addgroup @a t.me/b -100123`, `/delgroup`, `/groups` (❌ tugma bilan), `/stats`, `/help`. `/id` hamma uchun.
 - **Admin kim:** `ADMIN_IDS` yoki haydovchilar guruhi egasi/adminlari.
 - **Tasniflash (2026-11-17):** kalit so'zlar → `pipeline.decide`. AI'ga boradi: (1) noaniq xabar, (2) «yo'lovchi» chiqqan-u haydovchi belgisi ham bor (tekshiruv). AI ishonchi ≥ `AI_MIN_CONFIDENCE` (0.6) bo'lsa qabul qilinadi, tekshiruvda boshqacha desa AI ustun (`stats.ai_overrides`). AI ishlamasa kalit so'z natijasi qoladi. `AI_API_KEY` bo'sh bo'lsa noaniq xabar tashlanadi. Log: `[label/kw|ai]`.
+- **Guruh qidiruvi va admin kontakti (2026-11-17):** guruh tanlashda «🔎 Nomi bo'yicha qidirish» (`dc:search`, FSM `GroupSearch`, filtr FSM data `gq` da, `normalize` bilan kirill=lotin). Ruxsat yo'q/blok/Global Stop/API yo'q xabarlarida bog'lanish tugmasi.
 - **E'lon formatlash (2026-11-17):** kabinetda «✍️ E'lon matni» → `ad_format.build` → oldindan ko'rish: «✅ Shu ko'rinishda» / «📝 O'z matnim» / «✏️ Qayta yozish». Userbot e'lonni `parse_mode=None` bilan yuboradi.
 - **E'lon:** marshrut, vaqt, kishi soni, telefon, profil, manba havolasi, «✅ Oldim», «💬 Yozish».
 - **Dedup:** 45 daqiqa. Yetkazilmagan e'lon dublikat sanalmaydi.
@@ -59,7 +61,7 @@ Routerlar tartibi muhim: `admin, admin_panel, moderation, panel, driver_cabinet,
 - **Rejimlar:** `MODE=bot|userbot|both`. Userbot `/addgroup` bilan ochiq guruhga o'zi qo'shiladi. Taklif havolasi qo'llab-quvvatlanmaydi.
 
 ## `.env` kalitlari
-`MODE, BOT_TOKEN, DRIVERS_CHAT_ID, SOURCE_CHATS, ADMIN_IDS, GROUPS_FILE, MOD_FILE, USERS_FILE, ROUTES_FILE, ROUTE_FILTER_STRICT, BROADCAST_MAX_PER_DAY, AI_MIN_CONFIDENCE, DB_FILE, SESSION_SECRET, FERNET_KEY_FILE, API_ID, API_HASH, SESSION_NAME, AI_API_KEY, AI_BASE_URL, AI_MODEL, DEDUP_MINUTES, SEND_INTERVAL_SEC, MAX_AGE_MINUTES, ORDER_COOLDOWN_SEC, OFFER_IN_GROUPS, USE_SYSTEM_CA`
+`MODE, BOT_TOKEN, DRIVERS_CHAT_ID, SOURCE_CHATS, ADMIN_IDS, GROUPS_FILE, MOD_FILE, USERS_FILE, ROUTES_FILE, ROUTE_FILTER_STRICT, ADMIN_USERNAME, BROADCAST_MAX_PER_DAY, AI_MIN_CONFIDENCE, DB_FILE, SESSION_SECRET, FERNET_KEY_FILE, API_ID, API_HASH, SESSION_NAME, AI_API_KEY, AI_BASE_URL, AI_MODEL, DEDUP_MINUTES, SEND_INTERVAL_SEC, MAX_AGE_MINUTES, ORDER_COOLDOWN_SEC, OFFER_IN_GROUPS, USE_SYSTEM_CA`
 
 `.env` qiymatlarini, tokenni, `*.session`, `fernet.key` va `taxi.db` ni chatga chiqarmang.
 
@@ -67,7 +69,7 @@ Routerlar tartibi muhim: `admin, admin_panel, moderation, panel, driver_cabinet,
 ```bash
 .venv/Scripts/python main.py
 .venv/Scripts/python -m pytest -q tests        # 98 ta
-.venv/Scripts/python tests/e2e_fake_telegram.py # 148 ta, real Telegram'ga ulanmaydi
+.venv/Scripts/python tests/e2e_fake_telegram.py # 152 ta, real Telegram'ga ulanmaydi
 ```
 Bitta token bilan bir vaqtda faqat bitta nusxa ishlashi kerak.
 

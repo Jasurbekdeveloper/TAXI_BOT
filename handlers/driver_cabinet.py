@@ -16,6 +16,8 @@ from aiogram.types import (CallbackQuery, InlineKeyboardButton, InlineKeyboardMa
 
 import config
 from database import crud
+from handlers.common import contact_kb
+from nlp import normalize
 from services import ad_format
 from services import userbot_auth as auth
 from services.broadcaster import manager
@@ -44,6 +46,10 @@ class Auth(StatesGroup):
     phone = State()
     code = State()
     password = State()
+
+
+class GroupSearch(StatesGroup):
+    query = State()
 
 
 class AdText(StatesGroup):
@@ -133,7 +139,8 @@ async def on_connect(msg: Message, state: FSMContext):
         await show_menu(msg, uid)
         return
     if not (config.API_ID and config.API_HASH):
-        await msg.answer("⚙️ Akkaunt ulash hozircha sozlanmagan (API_ID/API_HASH). Admin bilan bog'laning.")
+        await msg.answer("⚙️ Akkaunt ulash hozircha sozlanmagan (API_ID/API_HASH). Admin bilan bog'laning.",
+                         reply_markup=contact_kb())
         return
     await state.set_state(Auth.phone)
     await msg.answer(
@@ -144,8 +151,10 @@ async def on_connect(msg: Message, state: FSMContext):
         reply_markup=_cancel_kb([KeyboardButton(text="📱 Raqamni yuborish", request_contact=True)]))
 
 
-@router.message(StateFilter(Auth.phone, Auth.code, Auth.password, AdText.waiting, AdText.confirm), F.text == BTN_CANCEL)
-@router.message(StateFilter(Auth.phone, Auth.code, Auth.password, AdText.waiting, AdText.confirm), Command("cancel"))
+@router.message(StateFilter(Auth.phone, Auth.code, Auth.password, AdText.waiting, AdText.confirm, GroupSearch.query),
+                F.text == BTN_CANCEL)
+@router.message(StateFilter(Auth.phone, Auth.code, Auth.password, AdText.waiting, AdText.confirm, GroupSearch.query),
+                Command("cancel"))
 async def on_cancel(msg: Message, state: FSMContext):
     await auth.cancel(msg.from_user.id)
     await state.clear()
@@ -185,7 +194,8 @@ async def on_phone(msg: Message, state: FSMContext):
         await state.clear()
         await show_menu(msg, msg.from_user.id)
         return
-    await msg.answer(errors.get(res, "❌ Kod yuborib bo'lmadi. Birozdan keyin qayta urinib ko'ring."))
+    await msg.answer(errors.get(res, "❌ Kod yuborib bo'lmadi. Birozdan keyin qayta urinib ko'ring."),
+                     reply_markup=contact_kb() if res in ("no_api", "banned") else None)
     if res != "invalid_phone":
         await state.clear()
         await show_menu(msg, msg.from_user.id)
@@ -243,10 +253,16 @@ async def _after_login_step(msg: Message, state: FSMContext, res: str):
 
 
 # ---------- Guruhlarni tanlash (sahifalangan) ----------
-def _groups_view(uid: int, page: int):
-    rows = crud.groups(uid)
+def _match(title: str, q: str) -> bool:
+    """Kirill/lotin va apostrofdan qat'i nazar: "термиз" = "Termiz", "qo'qon" = "qoqon"."""
+    return normalize(q) in normalize(title or "")
+
+
+def _groups_view(uid: int, page: int, q: str | None = None):
+    all_rows = crud.groups(uid)
+    rows = [r for r in all_rows if _match(r["title"], q)] if q else all_rows
     limit = crud.get_setting("max_groups")
-    n_sel = sum(1 for r in rows if r["selected"])
+    n_sel = sum(1 for r in all_rows if r["selected"])
     pages = max(1, (len(rows) + PAGE - 1) // PAGE)
     page = min(max(page, 0), pages - 1)
     kb = [[B(text=f"{'✅' if r['selected'] else '⬜'} {(r['title'] or str(r['chat_id']))[:40]}",
@@ -261,11 +277,23 @@ def _groups_view(uid: int, page: int):
         nav.append(B(text="➡️", callback_data=f"dc:p:{page + 1}"))
     if nav:
         kb.append(nav)
+    if q:
+        kb.append([B(text="🔎 Boshqa nom", callback_data="dc:search"),
+                   B(text="✖️ Qidiruvni tozalash", callback_data="dc:sclear")])
+    else:
+        kb.append([B(text="🔎 Nomi bo'yicha qidirish", callback_data="dc:search")])
     kb.append([B(text="🔄 Yangilash", callback_data="dc:refresh"), B(text="💾 Saqlash", callback_data="dc:done")])
-    text = (f"📋 <b>Guruhlarni tanlang</b> — {n_sel}/{limit}\n\n"
-            "✅ belgilangan guruhlarga e'loningiz yuboriladi, ulardagi yo'lovchi e'lonlari esa yopiq "
-            "haydovchilar guruhiga tushadi.")
+    text = f"📋 <b>Guruhlarni tanlang</b> — {n_sel}/{limit}\n\n"
+    if q:
+        text += (f"🔎 «{html.escape(q)}»: {len(rows)} ta topildi (jami {len(all_rows)})\n\n" if rows
+                 else f"🔎 «{html.escape(q)}» bo'yicha guruh topilmadi. Boshqa nom bilan qidiring.\n\n")
+    text += ("✅ belgilangan guruhlarga e'loningiz yuboriladi, ulardagi yo'lovchi e'lonlari esa yopiq "
+             "haydovchilar guruhiga tushadi.")
     return text, InlineKeyboardMarkup(inline_keyboard=kb)
+
+
+async def _query(state: FSMContext) -> str | None:
+    return (await state.get_data()).get("gq")
 
 
 async def _load_groups(uid: int) -> bool:
@@ -280,8 +308,9 @@ async def _load_groups(uid: int) -> bool:
 
 
 @router.message(F.text == BTN_GROUPS)
-async def on_groups(msg: Message):
+async def on_groups(msg: Message, state: FSMContext):
     uid = msg.from_user.id
+    await state.update_data(gq=None)
     if not manager.is_connected(uid):
         await show_menu(msg, uid)
         return
@@ -309,7 +338,7 @@ async def _edit(cb: CallbackQuery, text: str, kb):
 
 
 @router.callback_query(F.data.startswith("dc:g:"))
-async def on_group_toggle(cb: CallbackQuery):
+async def on_group_toggle(cb: CallbackQuery, state: FSMContext):
     uid = cb.from_user.id
     _, _, cid, page = cb.data.split(":")
     res = crud.toggle_group(uid, int(cid), crud.get_setting("max_groups"))
@@ -317,24 +346,54 @@ async def on_group_toggle(cb: CallbackQuery):
     if res == "limit":
         await cb.answer(f"Ko'pi bilan {crud.get_setting('max_groups')} ta guruh tanlash mumkin", show_alert=True)
         return
-    text, kb = _groups_view(uid, int(page))
+    text, kb = _groups_view(uid, int(page), await _query(state))
     await _edit(cb, text, kb)
     await cb.answer()
 
 
 @router.callback_query(F.data.startswith("dc:p:"))
-async def on_group_page(cb: CallbackQuery):
-    text, kb = _groups_view(cb.from_user.id, int(cb.data[5:]))
+async def on_group_page(cb: CallbackQuery, state: FSMContext):
+    text, kb = _groups_view(cb.from_user.id, int(cb.data[5:]), await _query(state))
     await _edit(cb, text, kb)
     await cb.answer()
 
 
 @router.callback_query(F.data == "dc:refresh")
-async def on_group_refresh(cb: CallbackQuery):
+async def on_group_refresh(cb: CallbackQuery, state: FSMContext):
     await _load_groups(cb.from_user.id)
-    text, kb = _groups_view(cb.from_user.id, 0)
+    text, kb = _groups_view(cb.from_user.id, 0, await _query(state))
     await _edit(cb, text, kb)
     await cb.answer("Yangilandi")
+
+
+@router.callback_query(F.data == "dc:search")
+async def on_group_search(cb: CallbackQuery, state: FSMContext):
+    await state.set_state(GroupSearch.query)
+    await cb.message.answer("🔎 Guruh nomidan bir qismini yozing, masalan: <b>termiz</b> yoki <b>denov</b>\n"
+                            "Kirill yoki lotinda yozsangiz ham topiladi.", parse_mode="HTML",
+                            reply_markup=_cancel_kb())
+    await cb.answer()
+
+
+@router.message(StateFilter(GroupSearch.query))
+async def on_group_search_text(msg: Message, state: FSMContext):
+    q = " ".join((msg.text or "").split())[:40]
+    if not normalize(q):
+        await msg.answer("Guruh nomidan bir qismini yozing yoki «❌ Bekor qilish».")
+        return
+    await state.set_state(None)
+    await state.update_data(gq=q)
+    await msg.answer("🔎 Qidiruv natijasi:", reply_markup=_menu_kb(msg.from_user.id))
+    text, kb = _groups_view(msg.from_user.id, 0, q)
+    await msg.answer(text, parse_mode="HTML", reply_markup=kb)
+
+
+@router.callback_query(F.data == "dc:sclear")
+async def on_group_search_clear(cb: CallbackQuery, state: FSMContext):
+    await state.update_data(gq=None)
+    text, kb = _groups_view(cb.from_user.id, 0)
+    await _edit(cb, text, kb)
+    await cb.answer()
 
 
 @router.callback_query(F.data == "dc:done")
@@ -461,7 +520,9 @@ async def on_start_broadcast(msg: Message):
     uid = msg.from_user.id
     reason = manager.start_broadcast(uid)
     if reason:
-        await msg.answer(reason, reply_markup=_menu_kb(uid))
+        # ruxsat/blok/global stop — admin hal qiladi: bog'lanish tugmasi bilan
+        need_admin = reason.startswith(("🔒", "🚫", "🚨"))
+        await msg.answer(reason, reply_markup=contact_kb() if need_admin else _menu_kb(uid))
         return
     n = len(crud.selected_groups(uid))
     await msg.answer(f"🚀 Rassilka boshlandi: {n} ta guruh, har {crud.get_session(uid)['interval_min']} daqiqada.\n"

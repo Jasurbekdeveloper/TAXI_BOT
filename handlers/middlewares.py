@@ -30,6 +30,7 @@ class TrackUsers(BaseMiddleware):
             if isinstance(event, CallbackQuery):
                 await event.answer("🚫 Siz bloklangansiz", show_alert=True)
             else:
-                await event.answer("🚫 Siz bloklangansiz. Admin bilan bog'laning.")
+                from handlers.common import contact_kb
+                await event.answer("🚫 Siz bloklangansiz. Admin bilan bog'laning.", reply_markup=contact_kb())
             return None
         return await handler(event, data)
