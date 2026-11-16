@@ -274,9 +274,9 @@ async def run():
     c0 = ai_calls[0]
     await step(msg("Salom hammaga")); await step(msg("Bugun havo yaxshi"))
     check("gap-so'z AI'ga bormaydi", ai_calls[0] == c0, ai_calls[0] - c0)
-    await step(msg("Nukus AI_GOOD", user=U(10))); r = new()
+    await step(msg("Nukus AI_GOOD", user=U(10))); await asyncio.sleep(.4); r = new()
     check("AI natijasi, kirill shahar nomi kanonik", len(r) == 1 and "Nukus → Xiva" in r[0][1], r)
-    await step(msg("Nukus AI_INT", user=U(11))); r = new()
+    await step(msg("Nukus AI_INT", user=U(11))); await asyncio.sleep(.4); r = new()
     check("AI from=123 yiqitmaydi", len(r) == 1 and "123" not in r[0][1].split("\n")[1], r)
     await step(msg("Nukus AI_LIST", user=U(12))); check("AI list yiqitmaydi", not new() and pipeline.stats["ai_errors"] == 1)
     await step(msg("Nukus AI_TAG", user=U(13))); r = new()
@@ -591,50 +591,53 @@ async def run():
 
     new()
     await step(msg("/agregator", chat=AV, user=U(ADMIN))); r = new()
-    check("agregator menyu (userbot ulangan)", r and "ulangan" in r[0][1] and "agg:groups" in markups[-1][1], (r, markups[-1:]))
+    check("agregator menyu (pastdan reply tugmalar)", r and "tarqatish" in r[0][1]
+          and "Guruhlar" in markups[-1][1] and "keyboard" in markups[-1][1], (r, markups[-1:]))
     await step(msg("/agregator", chat=AV, user=U(STRANGER))); check("begona agregator jim", not new())
 
-    # E'lon matni (callback -> FSM -> matn)
-    await step(acb("agg:text"))
+    # E'lon matni (reply tugma -> FSM -> matn)
+    await step(msg(aggregator.BTN_TEXT, chat=AV, user=U(ADMIN))); new()
     await step(msg("Yo'lovchilar! Termizdan Toshkentga har kuni, qulay narx.", chat=AV, user=U(ADMIN)))
     check("e'lon matni saqlandi", aggregator.get_text().startswith("Yo'lovchilar"))
 
-    # Guruhlar (callback): userbot dialoglari, bittasi tanlanadi
-    await step(acb("agg:groups"))
+    # Guruhlar (reply tugma -> inline tanlash)
+    await step(msg(aggregator.BTN_GROUPS, chat=AV, user=U(ADMIN)))
     check("guruhlar userbotdan keladi", set(aggregator.groups()) == {"-100801", "-100802"}, aggregator.groups())
     await step(acb("agg:g:-100801"))
     check("guruh tanlandi", aggregator.active_group_ids() == [-100801], aggregator.active_group_ids())
+    await step(acb("agg:done"))
 
-    # Hozir yuborish (tasdiqlash + darhol)
-    edits.clear()
-    await step(acb("agg:send"))
-    check("yuborishdan oldin tasdiqlash so'raladi", any("yuborilsinmi" in e[1] for e in edits), edits)
+    # Hozir yuborish (reply tugma -> inline tasdiqlash -> darhol)
+    new()
+    await step(msg(aggregator.BTN_SEND, chat=AV, user=U(ADMIN))); r = new()
+    check("yuborishdan oldin tasdiqlash so'raladi", any("yuborilsinmi" in x[1] for x in r), r)
     fake.sent.clear(); new()
     await step(acb("agg:send_do")); r = new()
     check("tasdiqlab hamma guruhga darhol yuborildi", any(c == -100801 and "Termizdan" in t for c, t in fake.sent)
           and any("guruhga yuborildi" in x[1] for x in r), (fake.sent, r))
 
-    # Jadval (scheduler) + 'birinchi e'lon' xabari
+    # Jadval (reply tugma) + 'birinchi e'lon' xabari
     fake.sent.clear(); new()
-    await step(acb("agg:sched"))
+    await step(msg(aggregator.BTN_SCHED_ON, chat=AV, user=U(ADMIN)))
     check("jadval yoqildi", aggregator.is_active())
     await asyncio.sleep(.6); r = new()
     check("jadval: userbot yubordi + birinchi e'lon xabari", any(c == -100801 for c, t in fake.sent)
           and any(str(x[0]) == "1" and "Birinchi e'loningiz" in x[1] for x in r), (fake.sent, r))
-    await step(acb("agg:sched")); check("jadval o'chadi", not aggregator.is_active())
+    await step(msg(aggregator.BTN_SCHED_OFF, chat=AV, user=U(ADMIN))); check("jadval o'chadi", not aggregator.is_active())
 
-    # Hisobot
-    edits.clear()
-    await step(acb("agg:report"))
-    check("hisobot 24 soat", any("Oxirgi 24 soat" in e[1] for e in edits), edits)
+    # Hisobot (reply tugma)
+    await step(msg(aggregator.BTN_REPORT, chat=AV, user=U(ADMIN))); r = new()
+    check("hisobot 24 soat", r and "Oxirgi 24 soat" in r[-1][1], r)
 
-    # Orqaga -> rol tanlash
-    edits.clear()
-    await step(acb("role:back"))
-    check("orqaga: rol tanlashga qaytadi", any("Siz kimsiz" in e[1] for e in edits), edits)
+    # Rolni o'zgartirish (reply tugma -> rol tanlash) -> haydovchi roli menyuni ochadi
+    await step(msg(aggregator.BTN_ROLE, chat=AV, user=U(ADMIN))); r = new()
+    check("rolni o'zgartirish: rol tanlash", r and "Siz kimsiz" in r[-1][1] and "role:driver" in markups[-1][1], (r, markups[-1:]))
+    await step(acb("role:driver")); r = new()
+    check("haydovchi roli (admin) menyuni ochadi", r and "tarqatish" in r[-1][1]
+          and "Guruhlar" in markups[-1][1] and "keyboard" in markups[-1][1], (r, markups[-1:]))
 
-    # Akkauntni uzish
-    await step(acb("agg:logout"))
+    # Akkauntni uzish (reply tugma -> inline tasdiqlash)
+    await step(msg(aggregator.BTN_LOGOUT, chat=AV, user=U(ADMIN))); new()
     await step(acb("agg:logout_do"))
     check("akkaunt uzildi", fake.logged_out and _admin.userbot is None and not aggregator.is_active(), fake.logged_out)
 

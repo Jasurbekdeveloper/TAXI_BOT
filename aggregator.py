@@ -21,7 +21,8 @@ from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import (CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, Message,
+                           ReplyKeyboardMarkup)
 
 import admin
 import config
@@ -35,11 +36,12 @@ B = InlineKeyboardButton
 BTN_GROUPS = "👥 Guruhlar"
 BTN_TEXT = "✍️ E'lon matni"
 BTN_SEND = "📤 Hozir yuborish"
-BTN_STOP = "⏸ Jadvalни to'xtatish"
-BTN_START = "▶️ Jadvalni yoqish"
+BTN_SCHED_ON = "▶️ Jadvalni yoqish"
+BTN_SCHED_OFF = "⏸ Jadvalni to'xtatish"
 BTN_REPORT = "📊 Hisobot"
 BTN_HELP = "❓ Yordam"
 BTN_LOGOUT = "❌ Akkauntni uzish"
+BTN_ROLE = "⬅️ Rolni o'zgartirish"
 
 logout_requested = False        # main.run_userbot buni ko'rib, ataylab uzilganda xato bermaydi
 POLL_SEC = 30                   # broadcaster fon vazifasi shunча soniyada bir tekshiradi
@@ -251,11 +253,11 @@ async def _notify_first(bot: Bot, chat_id: int):
             pass
 
 
-# ---------- Menyu (inline / callback) ----------
+# ---------- Menyu (aralash: asosiy pastdan reply, tanlash/tasdiqlash inline) ----------
 HELP_TEXT = (
     "📣 <b>Qanday ishlaydi</b>\n\n"
     "Bitta userbot akkaunt bir nechta taksi guruhiga a'zo bo'ladi:\n"
-    "• <b>Guruhlarni tanlash</b> — akkaunt guruhlaridan ✅ qilasiz.\n"
+    "• <b>Guruhlar</b> — akkaunt guruhlaridan ✅ qilasiz.\n"
     "• <b>E'lon matni</b> — \"yo'lovchi izlayman\" matnini yozasiz.\n"
     "• <b>Hozir yuborish</b> — tasdiqlab, darhol hamma tanlangan guruhga yuboradi.\n"
     "• <b>Jadvalni yoqish</b> — matnni belgilangan oraliqda avtomat takrorlab turadi.\n"
@@ -271,24 +273,25 @@ def _menu_text() -> str:
     return (f"📣 <b>Haydovchi — e'lon tarqatish</b>\n\n"
             f"Akkaunt: {conn}\nFaol guruhlar: {len(active_group_ids())}\n"
             f"E'lon matni: {'bor' if get_text() else 'yoʻq'}\n"
-            f"Avtomat jadval: {sched} ({interval_min()} daq)")
+            f"Avtomat jadval: {sched} ({interval_min()} daq)\n\n"
+            "Pastdagi tugmalardan foydalaning 👇")
 
 
-def _menu_kb() -> InlineKeyboardMarkup:
-    sched = "⏸ Jadvalni to'xtatish" if is_active() else "▶️ Jadvalni yoqish"
+def _menu_kb() -> ReplyKeyboardMarkup:
+    sched = BTN_SCHED_OFF if is_active() else BTN_SCHED_ON
+    return ReplyKeyboardMarkup(keyboard=[
+        [KeyboardButton(text=BTN_GROUPS), KeyboardButton(text=BTN_TEXT)],
+        [KeyboardButton(text=BTN_SEND)],
+        [KeyboardButton(text=sched), KeyboardButton(text=BTN_REPORT)],
+        [KeyboardButton(text=BTN_HELP), KeyboardButton(text=BTN_LOGOUT)],
+        [KeyboardButton(text=BTN_ROLE)],
+    ], resize_keyboard=True)
+
+
+def _role_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [B(text="👥 Guruhlarni tanlash", callback_data="agg:groups")],
-        [B(text="✍️ E'lon matni", callback_data="agg:text")],
-        [B(text="📤 Hozir yuborish", callback_data="agg:send")],
-        [B(text=sched, callback_data="agg:sched")],
-        [B(text="📊 Hisobot", callback_data="agg:report")],
-        [B(text="❓ Yordam", callback_data="agg:help"), B(text="❌ Akkauntni uzish", callback_data="agg:logout")],
-        [B(text="⬅️ Rolni o'zgartirish", callback_data="role:back")],
-    ])
-
-
-def _back_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[B(text="⬅️ Orqaga", callback_data="agg:menu")]])
+        [B(text="🧍 Yo'lovchiman", callback_data="role:passenger")],
+        [B(text="🚕 Haydovchiman", callback_data="role:driver")]])
 
 
 async def _is_admin(msg: Message, bot: Bot) -> bool:
@@ -303,15 +306,8 @@ async def _admin_cb(cb: CallbackQuery, bot: Bot) -> bool:
 
 
 async def show_menu(target: Message):
-    """Agregator menyusini yangi xabar sifatida ko'rsatadi (rol tanlashdan ham chaqiriladi)."""
+    """Agregator menyusini (pastdan chiqadigan tugmalar) ko'rsatadi. Rol tanlashdan ham chaqiriladi."""
     await target.answer(_menu_text(), parse_mode="HTML", reply_markup=_menu_kb())
-
-
-async def _edit(cb: CallbackQuery, text: str, kb):
-    try:
-        await cb.message.edit_text(text, parse_mode="HTML", reply_markup=kb, disable_web_page_preview=True)
-    except TelegramAPIError:
-        await cb.message.answer(text, parse_mode="HTML", reply_markup=kb, disable_web_page_preview=True)
 
 
 @router.message(Command("agregator"))
@@ -320,32 +316,27 @@ async def on_open(msg: Message, bot: Bot):
         await show_menu(msg)
 
 
-@router.callback_query(F.data == "agg:menu")
-async def on_menu(cb: CallbackQuery, bot: Bot, state: FSMContext):
-    if not await _admin_cb(cb, bot):
-        return
-    await state.clear()
-    await _edit(cb, _menu_text(), _menu_kb())
-    await cb.answer()
+@router.message(F.text == BTN_HELP)
+async def on_help(msg: Message, bot: Bot):
+    if await _is_admin(msg, bot):
+        await msg.answer(HELP_TEXT, parse_mode="HTML", reply_markup=_menu_kb())
 
 
-@router.callback_query(F.data == "agg:help")
-async def on_help(cb: CallbackQuery, bot: Bot):
-    if not await _admin_cb(cb, bot):
-        return
-    await _edit(cb, HELP_TEXT, _back_kb())
-    await cb.answer()
+@router.message(F.text == BTN_ROLE)
+async def on_role(msg: Message, bot: Bot):
+    if await _is_admin(msg, bot):
+        await msg.answer("Siz kimsiz?", reply_markup=_role_kb())
 
 
-@router.callback_query(F.data == "agg:text")
-async def on_text(cb: CallbackQuery, bot: Bot, state: FSMContext):
-    if not await _admin_cb(cb, bot):
+# ---- E'lon matni (FSM) ----
+@router.message(F.text == BTN_TEXT)
+async def on_text_btn(msg: Message, bot: Bot, state: FSMContext):
+    if not await _is_admin(msg, bot):
         return
     cur = get_text()
     await state.set_state(AdText.waiting)
-    await _edit(cb, ("Joriy matn:\n\n" + html.escape(cur) + "\n\n" if cur else "")
-                + "Yangi e'lon matnini yuboring. Bekor: /cancel", _back_kb())
-    await cb.answer()
+    await msg.answer(("Joriy matn:\n\n" + cur + "\n\n" if cur else "")
+                     + "Yangi e'lon matnini yuboring. Bekor: /cancel")
 
 
 @router.message(StateFilter(AdText.waiting), Command("cancel"))
@@ -361,41 +352,40 @@ async def on_text_set(msg: Message, state: FSMContext):
         return
     set_text(msg.text.strip())
     await state.clear()
-    await msg.answer("✅ E'lon matni saqlandi.")
-    await show_menu(msg)
+    await msg.answer("✅ E'lon matni saqlandi.", reply_markup=_menu_kb())
 
 
-@router.callback_query(F.data == "agg:sched")
-async def on_sched(cb: CallbackQuery, bot: Bot):
-    if not await _admin_cb(cb, bot):
+# ---- Jadval ----
+@router.message(F.text.in_({BTN_SCHED_ON, BTN_SCHED_OFF}))
+async def on_sched(msg: Message, bot: Bot):
+    if not await _is_admin(msg, bot):
         return
     if not is_active():
         if not get_text():
-            await cb.answer("Avval ✍️ E'lon matni", show_alert=True)
+            await msg.answer("❌ Avval ✍️ E'lon matni ni kiriting.", reply_markup=_menu_kb())
             return
         if not active_group_ids():
-            await cb.answer("Avval 👥 Guruhlarni tanlang", show_alert=True)
+            await msg.answer("❌ Avval 👥 Guruhlardan tanlang.", reply_markup=_menu_kb())
             return
     set_active(not is_active())
-    await _edit(cb, _menu_text(), _menu_kb())
-    await cb.answer("Jadval yoqildi" if is_active() else "Jadval o'chirildi")
+    await msg.answer("▶️ Jadval yoqildi." if is_active() else "⏸ Jadval to'xtatildi.", reply_markup=_menu_kb())
 
 
-@router.callback_query(F.data == "agg:report")
-async def on_report(cb: CallbackQuery, bot: Bot):
-    if not await _admin_cb(cb, bot):
+# ---- Hisobot ----
+@router.message(F.text == BTN_REPORT)
+async def on_report(msg: Message, bot: Bot):
+    if not await _is_admin(msg, bot):
         return
     rows = report()
     if not rows:
-        await _edit(cb, "📊 Oxirgi 24 soatda e'lon chiqmadi.", _back_kb())
-    else:
-        total = sum(n for _, n in rows)
-        lines = [f"📊 <b>Oxirgi 24 soat: {total} ta e'lon chiqdi</b>", ""] + [f"• {t}: {n}" for t, n in rows]
-        await _edit(cb, "\n".join(lines), _back_kb())
-    await cb.answer()
+        await msg.answer("📊 Oxirgi 24 soatda e'lon chiqmadi.", reply_markup=_menu_kb())
+        return
+    total = sum(n for _, n in rows)
+    lines = [f"📊 <b>Oxirgi 24 soat: {total} ta e'lon chiqdi</b>", ""] + [f"• {t}: {n}" for t, n in rows]
+    await msg.answer("\n".join(lines), parse_mode="HTML", reply_markup=_menu_kb())
 
 
-# ---- Guruhlarni tanlash ----
+# ---- Guruhlarni tanlash (inline) ----
 def _groups_text() -> str:
     return (f"👥 <b>Guruhlar</b> — tanlangan: {len(active_group_ids())}\n\n"
             "✅ belgili guruhlarga e'lon yuboriladi va ular o'qiladi. O'zgartirish uchun bosing.")
@@ -404,28 +394,30 @@ def _groups_text() -> str:
 def _groups_kb() -> InlineKeyboardMarkup:
     rows = [[B(text=f"{'✅' if v.get('on') else '⬜'} {v.get('title', k)[:38]}", callback_data=f"agg:g:{k}")]
             for k, v in groups().items()]
-    rows.append([B(text="⬅️ Orqaga", callback_data="agg:menu")])
+    rows.append([B(text="✔️ Tayyor", callback_data="agg:done")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-@router.callback_query(F.data == "agg:groups")
-async def on_groups(cb: CallbackQuery, bot: Bot):
-    if not await _admin_cb(cb, bot):
+@router.message(F.text == BTN_GROUPS)
+async def on_groups(msg: Message, bot: Bot):
+    if not await _is_admin(msg, bot):
         return
     if admin.userbot is None:
-        await _edit(cb, "🔴 Userbot ulanmagan. .env da MODE=both, API_ID/API_HASH, keyin terminalda login.", _back_kb())
-        await cb.answer()
+        await msg.answer("🔴 Userbot ulanmagan. .env da MODE=both, API_ID/API_HASH, keyin terminalda login.",
+                         reply_markup=_menu_kb())
         return
     try:
         dialogs = await _list_dialogs()
     except Exception as e:
         log.error("Dialoglarni olib bo'lmadi: %s", e)
-        await _edit(cb, "❌ Guruhlar ro'yxatini olib bo'lmadi.", _back_kb())
-        await cb.answer()
+        await msg.answer("❌ Guruhlar ro'yxatini olib bo'lmadi.", reply_markup=_menu_kb())
         return
     set_groups(dialogs)
-    await _edit(cb, _groups_text(), _groups_kb())
-    await cb.answer()
+    if not groups():
+        await msg.answer("Akkaunt hali hеch qanday guruhga a'zo emas. Avval taksi guruhlarga qo'shiling.",
+                         reply_markup=_menu_kb())
+        return
+    await msg.answer(_groups_text(), parse_mode="HTML", reply_markup=_groups_kb())
 
 
 @router.callback_query(F.data.startswith("agg:g:"))
@@ -433,31 +425,53 @@ async def on_group_toggle(cb: CallbackQuery, bot: Bot):
     if not await _admin_cb(cb, bot):
         return
     toggle_group(cb.data[6:])
-    await _edit(cb, _groups_text(), _groups_kb())
+    try:
+        await cb.message.edit_text(_groups_text(), parse_mode="HTML", reply_markup=_groups_kb())
+    except TelegramAPIError:
+        pass
     await cb.answer()
 
 
-# ---- Hozir yuborish (tasdiqlash bilan) ----
-@router.callback_query(F.data == "agg:send")
-async def on_send(cb: CallbackQuery, bot: Bot):
+@router.callback_query(F.data == "agg:done")
+async def on_groups_done(cb: CallbackQuery, bot: Bot):
     if not await _admin_cb(cb, bot):
+        return
+    try:
+        await cb.message.edit_text(f"✅ Tanlangan guruhlar: {len(active_group_ids())}", parse_mode="HTML")
+    except TelegramAPIError:
+        pass
+    await cb.answer("Saqlandi")
+
+
+# ---- Hozir yuborish (reply tugma -> inline tasdiqlash) ----
+@router.message(F.text == BTN_SEND)
+async def on_send_btn(msg: Message, bot: Bot):
+    if not await _is_admin(msg, bot):
         return
     text, n = get_text(), len(active_group_ids())
     if admin.userbot is None:
-        await cb.answer("Userbot ulanmagan", show_alert=True)
+        await msg.answer("🔴 Userbot ulanmagan.", reply_markup=_menu_kb())
         return
     if not text:
-        await _edit(cb, "❌ Avval ✍️ E'lon matni ni kiriting.", _back_kb())
-        await cb.answer()
+        await msg.answer("❌ Avval ✍️ E'lon matni ni kiriting.", reply_markup=_menu_kb())
         return
     if not n:
-        await _edit(cb, "❌ Avval 👥 Guruhlarni tanlang.", _back_kb())
-        await cb.answer()
+        await msg.answer("❌ Avval 👥 Guruhlardan tanlang.", reply_markup=_menu_kb())
         return
-    await _edit(cb, f"📤 Shu xabar <b>{n}</b> ta guruhga yuborilsinmi?\n\n<i>{html.escape(text[:400])}</i>",
-                InlineKeyboardMarkup(inline_keyboard=[
-                    [B(text=f"✅ Ha, {n} guruhga yuborish", callback_data="agg:send_do")],
-                    [B(text="⬅️ Orqaga", callback_data="agg:menu")]]))
+    await msg.answer(f"📤 Shu xabar <b>{n}</b> ta guruhga yuborilsinmi?\n\n<i>{html.escape(text[:400])}</i>",
+                     parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                         [B(text=f"✅ Ha, {n} guruhga yuborish", callback_data="agg:send_do")],
+                         [B(text="❌ Bekor", callback_data="agg:cancel")]]))
+
+
+@router.callback_query(F.data == "agg:cancel")
+async def on_cancel_inline(cb: CallbackQuery, bot: Bot):
+    if not await _admin_cb(cb, bot):
+        return
+    try:
+        await cb.message.edit_text("Bekor qilindi.")
+    except TelegramAPIError:
+        pass
     await cb.answer()
 
 
@@ -467,26 +481,30 @@ async def on_send_do(cb: CallbackQuery, bot: Bot):
         return
     text, targets = get_text(), active_group_ids()
     if admin.userbot is None or not text or not targets:
-        await _edit(cb, "❌ Yuborib bo'lmadi (userbot/matn/guruh yo'q).", _back_kb())
+        try:
+            await cb.message.edit_text("❌ Yuborib bo'lmadi (userbot/matn/guruh yo'q).")
+        except TelegramAPIError:
+            pass
         await cb.answer()
         return
-    await _edit(cb, "📤 Yuborilmoqda...", None)
+    try:
+        await cb.message.edit_text("📤 Yuborilmoqda...")
+    except TelegramAPIError:
+        pass
     await cb.answer()
     ok = await _broadcast(bot, text, targets)
-    await cb.message.answer(f"✅ {ok}/{len(targets)} guruhga yuborildi.")
-    await show_menu(cb.message)
+    await cb.message.answer(f"✅ {ok}/{len(targets)} guruhga yuborildi.", reply_markup=_menu_kb())
 
 
-# ---- Akkauntni uzish ----
-@router.callback_query(F.data == "agg:logout")
-async def on_logout(cb: CallbackQuery, bot: Bot):
-    if not await _admin_cb(cb, bot):
+# ---- Akkauntni uzish (reply tugma -> inline tasdiqlash) ----
+@router.message(F.text == BTN_LOGOUT)
+async def on_logout_btn(msg: Message, bot: Bot):
+    if not await _is_admin(msg, bot):
         return
-    await _edit(cb, "Akkauntni uzasizmi? Userbot o'qish va tarqatish to'xtaydi.",
-                InlineKeyboardMarkup(inline_keyboard=[
-                    [B(text="❌ Ha, uzish", callback_data="agg:logout_do")],
-                    [B(text="⬅️ Orqaga", callback_data="agg:menu")]]))
-    await cb.answer()
+    await msg.answer("Akkauntni uzasizmi? Userbot o'qish va tarqatish to'xtaydi.",
+                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                         [B(text="❌ Ha, uzish", callback_data="agg:logout_do")],
+                         [B(text="Bekor", callback_data="agg:cancel")]]))
 
 
 @router.callback_query(F.data == "agg:logout_do")
@@ -496,7 +514,10 @@ async def on_logout_do(cb: CallbackQuery, bot: Bot):
         return
     ub = admin.userbot
     if ub is None:
-        await _edit(cb, "Akkaunt allaqachon ulanmagan.", _back_kb())
+        try:
+            await cb.message.edit_text("Akkaunt allaqachon ulanmagan.")
+        except TelegramAPIError:
+            pass
         await cb.answer()
         return
     logout_requested = True
@@ -507,7 +528,10 @@ async def on_logout_do(cb: CallbackQuery, bot: Bot):
     admin.userbot = None
     _delete_session()
     set_active(False)
-    await _edit(cb, "✅ Akkaunt uzildi. Userbotsiz ishlash uchun .env da MODE=bot qiling.", None)
+    try:
+        await cb.message.edit_text("✅ Akkaunt uzildi. Userbotsiz ishlash uchun .env da MODE=bot qiling.")
+    except TelegramAPIError:
+        pass
     await cb.answer()
 
 
