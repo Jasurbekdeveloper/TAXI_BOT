@@ -1,0 +1,19 @@
+[Unit]
+Description=Taksi bot (aggregator + userbot)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Agar foydalanuvchi "ubuntu" bo'lmasa, quyidagilarni o'zgartiring:
+User=ubuntu
+WorkingDirectory=/home/ubuntu/TAXI_BOT
+ExecStart=/home/ubuntu/TAXI_BOT/.venv/bin/python main.py
+Restart=always
+RestartSec=5
+# Qayta ishga tushsa ham log'lar jurnalda qoladi
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
