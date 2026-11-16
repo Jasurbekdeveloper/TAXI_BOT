@@ -14,14 +14,18 @@ from aiogram.exceptions import AiogramError, TelegramBadRequest
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 import admin
-import aggregator
 import config
 import moderation
 import order
 import panel
 import relay
+import routes
 import store
+from database import crud
+from handlers import admin_panel, driver_cabinet
+from handlers.middlewares import TrackUsers
 from pipeline import Incoming, process, sender
+from services.broadcaster import manager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -37,7 +41,7 @@ _TAKEN_LIMIT = 5000
 async def on_group_message(msg: Message, bot: Bot):
     if config.MODE == "userbot" or (msg.from_user and msg.from_user.is_bot):
         return
-    if msg.chat.id == config.DRIVERS_CHAT_ID or (msg.text or "").startswith("/"):
+    if msg.chat.id in routes.closed_chat_ids() or (msg.text or "").startswith("/"):
         return
     if not store.find(msg.chat.id, msg.chat.username, msg.chat.title):
         return
@@ -60,7 +64,7 @@ async def on_group_message(msg: Message, bot: Bot):
 async def on_channel_post(msg: Message):
     if config.MODE == "userbot":        # userbot rejimida kanalni akkaunt o'qiydi, ikki marta bo'lmasin
         return
-    if msg.chat.id == config.DRIVERS_CHAT_ID or (msg.text or "").startswith("/"):
+    if msg.chat.id in routes.closed_chat_ids() or (msg.text or "").startswith("/"):
         return
     if not store.find(msg.chat.id, msg.chat.username, msg.chat.title):
         return
@@ -133,12 +137,11 @@ async def run_userbot():
     @client.on(events.NewMessage(incoming=True))
     async def handler(event):
         # Guruh ham, kanal (broadcast) ham o'qiladi: akkaunt obuna bo'lsa yetarli, bot ichida bo'lishi shart emas
-        if not ((event.is_group or event.is_channel) and event.raw_text) or event.chat_id == config.DRIVERS_CHAT_ID:
+        if not ((event.is_group or event.is_channel) and event.raw_text) or event.chat_id in routes.closed_chat_ids():
             return
         chat = await event.get_chat()
-        # Kuzatuv ro'yxatidagi guruh/kanal YOKI agregatorning faol guruhi o'qiladi
-        if not (store.find(event.chat_id, getattr(chat, "username", None), getattr(chat, "title", None))
-                or aggregator.is_active_group(event.chat_id)):
+        # Faqat kuzatuv ro'yxatidagi guruh/kanal (haydovchilar tanlagan guruhlarni services/broadcaster o'qiydi)
+        if not store.find(event.chat_id, getattr(chat, "username", None), getattr(chat, "title", None)):
             return
         broadcast = event.is_channel and not event.is_group     # kanal postida shaxsiy muallif yo'q
         sender_ = None if broadcast else await event.get_sender()
@@ -168,8 +171,7 @@ async def run_userbot():
     finally:
         admin.userbot = None
         await client.disconnect()
-    if not aggregator.logout_requested:             # ataylab "Akkauntni uzish" bo'lmasa, uzilish xato hisoblanadi
-        raise RuntimeError("Userbot ulanishi uzildi")  # bot "tirikdek" turib, xabar o'qimasdan qolmasin
+    raise RuntimeError("Userbot ulanishi uzildi")  # bot "tirikdek" turib, xabar o'qimasdan qolmasin
 
 
 async def preflight(bot: Bot):
@@ -197,15 +199,20 @@ async def main():
         import truststore
         truststore.inject_into_ssl()
 
+    crud.counts()                       # bazani ochadi, jadvallarni yaratadi, eski JSON'larni ko'chiradi
     bot = Bot(config.BOT_TOKEN)
     await preflight(bot)
     dp = Dispatcher()
-    # buyruqlar umumiy handlerdan oldin; moderatsiya reklamani taksi tahliliga yetmasdan o'chiradi
-    dp.include_routers(admin.router, moderation.router, panel.router, aggregator.router,
-                       relay.router, order.router, router)
+    dp.message.outer_middleware(TrackUsers())
+    dp.callback_query.outer_middleware(TrackUsers())
+    # buyruqlar umumiy handlerdan oldin; moderatsiya reklamani taksi tahliliga yetmasdan o'chiradi.
+    # driver_cabinet reply-tugmalari order dagi "erkin matn" handleridan oldin turishi shart.
+    dp.include_routers(admin.router, admin_panel.router, moderation.router, panel.router,
+                       driver_cabinet.router, relay.router, order.router, router)
 
+    await manager.start(bot)            # haydovchi akkauntlarini ulaydi, to'xtamagan rassilkalarni davom ettiradi
     polling = asyncio.create_task(dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types()))
-    tasks = [polling, asyncio.create_task(sender(bot)), asyncio.create_task(aggregator.broadcaster(bot))]
+    tasks = [polling, asyncio.create_task(sender(bot))]
     if config.MODE in ("userbot", "both"):
         tasks.append(asyncio.create_task(run_userbot()))
 
@@ -214,6 +221,7 @@ async def main():
     for t in pending:
         t.cancel()
     await asyncio.gather(*pending, return_exceptions=True)
+    await manager.shutdown()
     await bot.session.close()
     for t in done:
         t.result()

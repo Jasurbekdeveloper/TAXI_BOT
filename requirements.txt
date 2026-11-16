@@ -3,3 +3,4 @@ telethon~=1.45
 httpx~=0.28
 python-dotenv~=1.2
 truststore~=0.10
+cryptography>=42

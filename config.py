@@ -55,11 +55,14 @@ ROUTES_FILE = Path(os.getenv("ROUTES_FILE", "").strip() or BASE_DIR / "routes.js
 # 1 = yo'nalishi aniqlanmagan e'lonlar ham filtrdan o'tmaydi. 0 = ularni o'tkazadi (e'lon yo'qotmaslik uchun)
 ROUTE_FILTER_STRICT = os.getenv("ROUTE_FILTER_STRICT", "").strip().lower() in ("1", "true", "yes")
 
-# Userbot agregator/tarqatkich ("yo'lovchi izlayman" e'lonini guruhlarga jadval bo'yicha yuborish)
-AGG_FILE = Path(os.getenv("AGG_FILE", "").strip() or BASE_DIR / "aggregator.json")
-BROADCAST_MIN_INTERVAL_MIN = _int("BROADCAST_MIN_INTERVAL_MIN", 30)   # guruhga shundan tez-tez e'lon yuborilmaydi
-BROADCAST_MAX_PER_DAY = _int("BROADCAST_MAX_PER_DAY", 20)             # kunlik maksimal tarqatish sikli
-BROADCAST_GAP_SEC = _float("BROADCAST_GAP_SEC", 4.0)                  # guruhlar orasidagi pauza (spam/flood oldini olish)
+# Haydovchi rassilkasi: bitta haydovchi uchun kunlik maksimal sikl (pauza va interval /admin -> Sozlamalar da)
+BROADCAST_MAX_PER_DAY = _int("BROADCAST_MAX_PER_DAY", 40)
+
+# SQLite baza: foydalanuvchilar (obuna), haydovchi sessiyalari, yo'nalishlar, sozlamalar
+DB_FILE = Path(os.getenv("DB_FILE", "").strip() or BASE_DIR / "taxi.db")
+# Haydovchi sessiyalarini shifrlash kaliti (Fernet). Bo'sh bo'lsa fernet.key fayli avtomatik yaratiladi.
+SESSION_SECRET = os.getenv("SESSION_SECRET", "").strip()
+FERNET_KEY_FILE = Path(os.getenv("FERNET_KEY_FILE", "").strip() or BASE_DIR / "fernet.key")
 
 # Userbot (my.telegram.org dan olinadi)
 API_ID = _int("API_ID")

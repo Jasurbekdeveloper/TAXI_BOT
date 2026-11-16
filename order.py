@@ -15,7 +15,6 @@ from aiogram.types import (
 )
 
 import admin
-import aggregator
 import config
 import pipeline
 import userstore
@@ -63,9 +62,10 @@ def _passenger_kb():
 
 DRIVER_INFO = (
     "🚕 <b>Haydovchilar uchun</b>\n\n"
-    "Yo'lovchi e'lonlari maxfiy haydovchilar guruhiga yig'iladi — har e'lon yo'nalish hashtagi bilan "
-    "(masalan <code>#Toshkent_Termiz</code>), kerakli yo'nalishni bosib filtrlab ko'rishingiz mumkin.\n\n"
-    "Guruhga qo'shilish uchun admin bilan bog'laning. Yo'lovchi sifatida buyurtma ham berishingiz mumkin: /order"
+    "Yo'lovchi e'lonlari yopiq haydovchilar guruhlariga yig'iladi — har e'lon yo'nalish hashtagi bilan "
+    "(masalan <code>#Toshkent_Termiz</code>).\n\n"
+    "Akkauntingizni ulasangiz, e'loningizni o'zingiz a'zo bo'lgan guruhlarga avtomatik tarqatish mumkin. "
+    "Guruhga qo'shilish va ruxsat uchun admin bilan bog'laning."
 )
 
 
@@ -143,7 +143,7 @@ async def on_start(msg: Message, command: CommandObject, state: FSMContext, bot:
         return
     text = "Assalomu alaykum! 🚕\nSiz kimsiz?"
     if await admin.is_admin(bot, msg.from_user.id):
-        text += "\n\nBoshqaruv: /menu · /help"
+        text += "\n\nBoshqaruv: /admin · /menu · /help"
     await msg.answer(text, reply_markup=_role_kb())
 
 
@@ -172,13 +172,13 @@ async def on_role_passenger(cb: CallbackQuery, state: FSMContext):
 
 
 @router.callback_query(F.data == "role:driver")
-async def on_role_driver(cb: CallbackQuery, bot: Bot):
+async def on_role_driver(cb: CallbackQuery, state: FSMContext):
+    from handlers import driver_cabinet
+    await state.clear()
     userstore.set_role(cb.from_user.id, "driver")
     await cb.answer()
-    if await admin.is_admin(bot, cb.from_user.id):     # operator: to'g'ridan-to'g'ri tarqatkich menyusi
-        await aggregator.show_menu(cb.message)
-    else:
-        await _edit_or_send(cb, DRIVER_INFO, InlineKeyboardMarkup(inline_keyboard=[[ROLE_BACK]]), html_=True)
+    await _edit_or_send(cb, DRIVER_INFO, None, html_=True)
+    await driver_cabinet.show_menu(cb.message, cb.from_user.id)
 
 
 @router.message(Command("order"))

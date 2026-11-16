@@ -42,6 +42,12 @@ DRIVER_KW = {
     "ketyapman": 2, "ketyapmiz": 2, "ketamiz": 1, "yuramiz": 2, "jonaymiz": 2,
     "nujni passajiri": 3, "beru passajirov": 3, "svobodnie mesta": 3, "est mesta": 3,
     "vozmu passajirov": 3, "edu v": 1, "vizjayu": 2,
+    # haydovchi "ketaman/boraman" deb yozib, yo'lovchi chaqiradi: bular yo'lovchi kalitini bosib ketadi
+    "kim bor": 3, "kimda bor": 3, "kimga kerak": 3, "kimlar bor": 3, "kim ketadi": 3, "kim boradi": 3,
+    "olib ketaman": 3, "olib ketamiz": 3, "olib boraman": 3, "olib boramiz": 3,
+    "joy bosh": 3, "joylar bor": 3, "bor joy": 3, "kishi bor joy": 4, "kishilik joy": 3, "orin bor": 3, "bosh orin": 3, "joyimiz bor": 3,
+    "yolovchi olamiz": 3, "odam olamiz": 3, "pochta olamiz": 3, "yolovchilar kerak": 3,
+    "zakaz olaman": 3, "zakaz olamiz": 3, "dostavka qilamiz": 2,
     # mashina nomlari — kuchsiz belgi
     "cobalt": 1, "kobalt": 1, "gentra": 1, "nexia": 1, "neksiya": 1, "lacetti": 1,
     "malibu": 1, "spark": 1, "damas": 1, "kaptiva": 1, "captiva": 1, "tracker": 1,
@@ -213,13 +219,20 @@ def worth_ai(raw: str, p: Parsed) -> bool:
     return bool(p.frm or p.to or TAXI_HINT_RE.search(normalize(raw)))
 
 
+# "3 ta joy", "4 joy bo'sh", "2 o'rin" — haydovchi bo'sh joy taklif qilyapti ("joy bormi" esa yo'lovchi so'rovi)
+FREE_SEATS_RE = re.compile(r"\b([1-7]|bir|ikki|uch|tort|besh|olti)\s*(?:ta\s*)?(?:joy|orin|mesta|mesto)\b(?!\s*(?:bormi|kerak))")
+
+
 def analyze(raw: str) -> Parsed:
     t = normalize(raw)
     positive = NEGATED_RE.sub(" ", t)       # "taksi kerak emas" so'rov emas
     p, d = _score(positive, PASSENGER_KW), _score(positive, DRIVER_KW)
+    if FREE_SEATS_RE.search(positive):
+        d += 2
     if p >= 2 and p >= d + 2:
         label, conf = "passenger", True
-    elif d >= 2 and d >= p + 2:
+    elif d >= 2 and (d >= p + 2 or (d >= 3 and d > p)):
+        # kuchli haydovchi belgisi ("kim bor", "joy bor") "ketaman" dan ustun: e'lon maxfiy guruhga tushmasin
         label, conf = "driver", True
     else:
         label, conf = "unknown", False

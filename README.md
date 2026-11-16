@@ -120,5 +120,20 @@ Ajratiladigan ma'lumot: qayerdan → qayerga, vaqt, kishi soni, telefon.
 - ⚠️ Userbot rejimi Telegram qoidalariga zid bo'lishi mumkin. Asosiy akkauntingizni ishlatmang.
 - ⚠️ `.env` va `*.session` fayllari maxfiy: session akkauntga to'liq kirish beradi. Ularni hech kimga bermang.
 - Navbat, dedup va statistika xotirada turadi, restartda tozalanadi. Faqat guruhlar ro'yxati saqlanadi.
-#   T A X I _ B O T  
+#   T A X I _ B O T 
  
+ 
+
+## Haydovchi kabineti va admin panel (2026-11-17)
+
+- **Haydovchi:** `/start` → «🚕 Haydovchiman» (yoki `/driver`) → «🔐 Akkauntni ulash»: telefon, Telegram'dan kelgan kod
+  (`1 2 3 4 5` ko'rinishida, bo'sh joy bilan), 2FA paroli. Sessiya `taxi.db` da Fernet bilan shifrlangan holda saqlanadi.
+  Keyin «📋 Guruhlarni tanlash», «✍️ E'lon matni», «⏱ Interval» va «🚀 Tarqatishni boshlash» / «🛑 To'xtatish».
+  Tanlangan guruhlardagi yo'lovchi e'lonlari avtomatik yopiq guruhga tushadi.
+- **Admin:** `/admin` (faqat `.env` dagi `ADMIN_IDS`): statistika, haydovchini ID/@username bilan topish, ruxsat
+  (+7/+30 kun, cheksiz), blok, sessiyani uzish, yo'nalish → yopiq guruh, limitlar, 🚨 Global Stop, umumiy xabarnoma.
+- **Kerak:** `pip install -r requirements.txt`, `.env` da `API_ID`, `API_HASH` (my.telegram.org), `ADMIN_IDS`,
+  tavsiya: `SESSION_SECRET` (bo'sh bo'lsa `fernet.key` yaratiladi — uni zaxiralang).
+- ⚠️ E'lonlar haydovchilarning shaxsiy akkauntlari nomidan yuboriladi. Telegram bunday avtomatlashtirishni
+  cheklashi yoki akkauntni bloklashi mumkin; haydovchilarni bu haqda ogohlantiring.
+

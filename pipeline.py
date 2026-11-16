@@ -8,7 +8,8 @@ import time
 from dataclasses import dataclass
 
 from aiogram import Bot
-from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramRetryAfter, TelegramServerError
+from aiogram.exceptions import (TelegramBadRequest, TelegramForbiddenError, TelegramNetworkError, TelegramRetryAfter,
+                                TelegramServerError)
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 import ai
@@ -42,6 +43,7 @@ class Outgoing:
     passenger_id: int | None = None         # bot orqali buyurtma: "Oldim" bosilsa shu odamga xabar boradi
     done: asyncio.Future | None = None      # yuborish natijasi (True/False) kutayotgan uchun
     contact_url: str | None = None          # "Yozish" tugmasi
+    chat_id: int | None = None              # yopiq guruh (Smart Routing). None = DRIVERS_CHAT_ID
 
 
 # ---------- Dedup ----------
@@ -137,7 +139,8 @@ async def submit_order(user_id, username, full_name, d: dict, done: asyncio.Futu
     key = _dup_key(d["phone"], d["frm"], d["to"], d.get("seats"), d["when"], "", user_id)
     _seen[key] = time.time()                # guruhdagi xuddi shu e'lon haydovchilarga takror chiqmasin
     await queue.put(Outgoing(render_order(user_id, username, full_name, d), key,
-                             passenger_id=user_id, done=done, contact_url=contact_url(username, user_id)))
+                             passenger_id=user_id, done=done, contact_url=contact_url(username, user_id),
+                             chat_id=routes.target_chat(canon_city(d["frm"]), canon_city(d["to"]))))
 
 
 async def process(m: Incoming) -> str | None:
@@ -167,12 +170,14 @@ async def process(m: Incoming) -> str | None:
         return label
     if not routes.allowed(frm, to):     # xizmat qilinmaydigan yo'nalish: maxfiy guruhga yuborilmaydi
         return label
+    if m.chat_id in routes.closed_chat_ids():   # yopiq guruhning o'zidan kelgan xabar qaytib tushmasin
+        return label
     key = _dup_key(p.phone, frm, to, seats, when, m.text, m.user_id)
     if is_duplicate(key):
         stats["dup"] += 1
         return label
     await queue.put(Outgoing(render(m, frm, to, seats, when, p.phone), key,
-                             contact_url=contact_url(m.username, m.user_id)))
+                             contact_url=contact_url(m.username, m.user_id), chat_id=routes.target_chat(frm, to)))
     return label
 
 
@@ -186,12 +191,20 @@ def taken_kb(passenger_id=None, url=None):
 
 async def _deliver(bot: Bot, item: Outgoing):
     async def send(url):
-        await bot.send_message(config.DRIVERS_CHAT_ID, item.text, parse_mode="HTML",
+        await bot.send_message(item.chat_id or config.DRIVERS_CHAT_ID, item.text, parse_mode="HTML",
                                reply_markup=taken_kb(item.passenger_id, url), disable_web_page_preview=True)
 
     try:
         await send(item.contact_url)
-    except TelegramBadRequest as e:
+    except (TelegramBadRequest, TelegramForbiddenError) as e:
+        # Yo'nalishning yopiq guruhiga yozib bo'lmasa (bot chiqarilgan, ID xato) — e'lon yo'qolmasin
+        if item.chat_id and item.chat_id != config.DRIVERS_CHAT_ID and "BUTTON_USER" not in str(e):
+            log.error("Yopiq guruhga yuborilmadi (chat=%s): %s. DRIVERS_CHAT_ID ga yuboriladi", item.chat_id, e)
+            item.chat_id = None
+            await _deliver(bot, item)
+            return
+        if not isinstance(e, TelegramBadRequest):
+            raise
         # Yo'lovchi maxfiylik sozlamasi tg://user tugmasini taqiqlasa, Telegram butun xabarni rad etadi
         if not (item.contact_url and "BUTTON_USER" in str(e)):
             raise

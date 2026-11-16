@@ -1,4 +1,3 @@
-import importlib
 import sys
 from pathlib import Path
 
@@ -19,11 +18,16 @@ def test_route_hashtag():
 
 @pytest.fixture
 def rt(tmp_path, monkeypatch):
+    from database import models
+    models.close()
+    monkeypatch.setattr(config, "DB_FILE", tmp_path / "t.db")
     monkeypatch.setattr(config, "ROUTES_FILE", tmp_path / "r.json")
+    monkeypatch.setattr(config, "USERS_FILE", tmp_path / "u.json")
+    monkeypatch.setattr(config, "DRIVERS_CHAT_ID", -1009999)
     monkeypatch.setattr(config, "ROUTE_FILTER_STRICT", False)
     import routes
-    importlib.reload(routes)
-    return routes
+    yield routes
+    models.close()
 
 
 def test_routes_add_remove_bidirectional(rt):
@@ -55,10 +59,8 @@ def test_parse_pair(rt):
 
 
 @pytest.fixture
-def us(tmp_path, monkeypatch):
-    monkeypatch.setattr(config, "USERS_FILE", tmp_path / "u.json")
+def us(rt):
     import userstore
-    importlib.reload(userstore)
     return userstore
 
 
@@ -66,9 +68,34 @@ def test_user_role_persist(us):
     assert us.get_role(5) is None
     us.set_role(5, "driver")
     assert us.get_role(5) == "driver"
-    importlib.reload(us)                                     # restart: fayldan o'qiladi
+    from database import models
+    models.close()                                           # restart: bazadan o'qiladi
     assert us.get_role(5) == "driver"
     us.set_role(5, "passenger")
     assert us.get_role(5) == "passenger"
     us.set_role(5, "boshqa")                                 # noto'g'ri rol e'tiborsiz
     assert us.get_role(5) == "passenger"
+
+
+def test_smart_routing_target(rt):
+    assert rt.target_chat("Toshkent", "Samarqand") == -1009999     # yo'nalish yo'q: asosiy guruh
+    assert rt.add("Toshkent", "Samarqand", -100777, "TS yopiq")
+    assert rt.add("Termiz", "Toshkent")                              # guruhsiz yo'nalish
+    assert rt.target_chat("Samarqand", "Toshkent") == -100777        # ikki tomonlama
+    assert rt.target_chat("Toshkent", "Termiz") == -1009999
+    assert rt.target_chat(None, "Toshkent") == -1009999
+    assert rt.closed_chat_ids() == {-100777, -1009999}
+
+
+def test_json_migration(tmp_path, monkeypatch):
+    import json
+    from database import crud, models
+    models.close()
+    monkeypatch.setattr(config, "DB_FILE", tmp_path / "m.db")
+    (tmp_path / "u.json").write_text(json.dumps({"5": {"role": "driver"}}), encoding="utf-8")
+    (tmp_path / "r.json").write_text(json.dumps([["Termiz", "Toshkent"]]), encoding="utf-8")
+    monkeypatch.setattr(config, "USERS_FILE", tmp_path / "u.json")
+    monkeypatch.setattr(config, "ROUTES_FILE", tmp_path / "r.json")
+    assert crud.get_role(5) == "driver"
+    assert [(r["city_a"], r["city_b"]) for r in crud.all_routes()] == [("Termiz", "Toshkent")]
+    models.close()

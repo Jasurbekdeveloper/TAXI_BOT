@@ -1,68 +1,39 @@
-"""Xizmat qilinadigan yo'nalishlar ro'yxati. routes.json da saqlanadi (store.py atomik-JSON naqshi).
+"""Yo'nalishlar va Smart Routing. Ma'lumot SQLite `routes` jadvalida (database/crud.py).
 
-Yo'nalish — ikki shaharning tartibsiz juftligi (Termiz-Toshkent = Toshkent-Termiz).
-Ro'yxat bo'sh bo'lsa, hamma yo'nalish o'tadi (orqaga moslik).
+Yo'nalish — ikki shaharning tartibsiz juftligi (Termiz-Toshkent = Toshkent-Termiz) va unga
+biriktirilgan yopiq guruh (chat_id). chat_id bo'sh bo'lsa e'lon DRIVERS_CHAT_ID ga boradi.
+Ro'yxat bo'sh bo'lsa, hamma yo'nalish o'tadi va hammasi DRIVERS_CHAT_ID ga boradi.
 """
-import json
-import logging
-import os
 import re
 
 import config
+from database import crud
 from nlp import canon_city, known_city
-
-log = logging.getLogger(__name__)
-
-_routes: list[list[str]] | None = None      # [[CityA, CityB], ...]
-
-
-def _load() -> list[list[str]]:
-    global _routes
-    if _routes is None:
-        try:
-            _routes = json.loads(config.ROUTES_FILE.read_text(encoding="utf-8")) if config.ROUTES_FILE.exists() else []
-        except (OSError, ValueError) as e:
-            log.error("%s o'qilmadi (%s)", config.ROUTES_FILE.name, e)
-            _routes = []
-    return _routes
-
-
-def _save():
-    tmp = config.ROUTES_FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(_routes, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(tmp, config.ROUTES_FILE)
 
 
 def all_routes() -> list[list[str]]:
-    return [list(r) for r in _load()]
+    return [[r["city_a"], r["city_b"]] for r in crud.all_routes()]
 
 
-def add(a: str, b: str) -> bool:
+def _find(ca: str, cb: str):
+    pair = {ca, cb}
+    return next((r for r in crud.all_routes() if {r["city_a"], r["city_b"]} == pair), None)
+
+
+def add(a: str, b: str, chat_id: int | None = None, title: str = "") -> bool:
     """Ikki shahar nomini qabul qiladi (kanonik ko'rinishga keltiradi). Yangi bo'lsa True."""
     if not (known_city(a) and known_city(b)):   # faqat tanilgan shaharlar
         return False
     ca, cb = canon_city(a), canon_city(b)
-    if ca == cb:
+    if ca == cb or _find(ca, cb):
         return False
-    pair = {ca, cb}
-    routes = _load()
-    if any(pair == set(r) for r in routes):
-        return False
-    routes.append([ca, cb])
-    _save()
+    crud.add_route(ca, cb, chat_id, title)
     return True
 
 
 def remove(a: str, b: str) -> bool:
-    ca, cb = canon_city(a), canon_city(b)
-    pair = {ca, cb}
-    routes = _load()
-    kept = [r for r in routes if set(r) != pair]
-    if len(kept) == len(routes):
-        return False
-    routes[:] = kept
-    _save()
-    return True
+    r = _find(canon_city(a), canon_city(b))
+    return bool(r) and crud.delete_route(r["id"])
 
 
 def parse_pair(text: str) -> tuple[str, str] | None:
@@ -74,11 +45,24 @@ def parse_pair(text: str) -> tuple[str, str] | None:
 
 
 def allowed(frm: str | None, to: str | None) -> bool:
-    """Shu yo'nalish maxfiy guruhga yuborilsinmi?"""
-    routes = _load()
-    if not routes:                      # ro'yxat bo'sh: hammasi o'tadi
+    """Shu yo'nalish yopiq guruhlarga yuborilsinmi?"""
+    rs = crud.all_routes()
+    if not rs:                          # ro'yxat bo'sh: hammasi o'tadi
         return True
     if not (frm and to):                # yo'nalish noaniq
         return not config.ROUTE_FILTER_STRICT
-    pair = {frm, to}
-    return any(pair == set(r) for r in routes)
+    return _find(frm, to) is not None
+
+
+def target_chat(frm: str | None, to: str | None) -> int:
+    """E'lon qaysi yopiq guruhga ketadi. Yo'nalishga guruh biriktirilmagan bo'lsa — DRIVERS_CHAT_ID."""
+    r = _find(frm, to) if frm and to else None
+    return r["chat_id"] if r is not None and r["chat_id"] else config.DRIVERS_CHAT_ID
+
+
+def closed_chat_ids() -> set[int]:
+    """Barcha yopiq (e'lon qabul qiluvchi) guruhlar: ular manba sifatida o'qilmaydi va ularga tarqatilmaydi."""
+    ids = {r["chat_id"] for r in crud.all_routes() if r["chat_id"]}
+    if config.DRIVERS_CHAT_ID:
+        ids.add(config.DRIVERS_CHAT_ID)
+    return ids

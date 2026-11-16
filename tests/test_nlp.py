@@ -38,6 +38,14 @@ CASES = [
     ("Surxondaryodan Toshkentga taksi kerak", "passenger", "Surxondaryo", "Toshkent", None, None),
     ("Шўрчидан Тошкентга мошина керак 2 киши", "passenger", "Sho'rchi", "Toshkent", 2, None),
     ("Toshdan Denovga ketaman", "passenger", "Toshkent", "Denov", None, None),
+    # haydovchi e'lonlari maxfiy guruhga tushmasligi kerak
+    ("Hozir Toshkentga ketaman, kim bor?", "driver", None, "Toshkent", None, "hozir"),
+    ("Pochta olib ketaman Toshkentga", "driver", None, "Toshkent", None, None),
+    ("Toshkentga boraman, kimga kerak", "driver", None, "Toshkent", None, None),
+    ("Termizdan Toshkentga boraman, odam olaman", "driver", "Termiz", "Toshkent", None, None),
+    ("Assalomu alaykum Toshkentga ketaman yoʻlovchi kerak", "driver", None, "Toshkent", None, None),
+    ("Toshkentga ketaman 4 joy bosh", "driver", None, "Toshkent", 4, None),
+    ("Toshkentga ketaman bugun, 2 kishi bor joy", "driver", None, "Toshkent", 2, "bugun"),
 ]
 
 

@@ -7,16 +7,16 @@ os.environ.update(BOT_TOKEN="123456:TESTTOKENTESTTOKENTESTTOKEN", DRIVERS_CHAT_I
                   SOURCE_CHATS="", SEND_INTERVAL_SEC="0.05", ORDER_COOLDOWN_SEC="120", OFFER_IN_GROUPS="0", AI_API_KEY="fake", USE_SYSTEM_CA="",
                   AI_BASE_URL="http://127.0.0.1:18081/v1", GROUPS_FILE=str(tmp / "groups.json"), ADMIN_IDS="1",
                   MOD_FILE=str(tmp / "moderation.json"), USERS_FILE=str(tmp / "users.json"),
-                  ROUTES_FILE=str(tmp / "routes.json"), AGG_FILE=str(tmp / "aggregator.json"),
-                  BROADCAST_MIN_INTERVAL_MIN="0", BROADCAST_MAX_PER_DAY="2", BROADCAST_GAP_SEC="0.02")
-sys.path.insert(0, r"C:\My Work\taxi_bot")
+                  ROUTES_FILE=str(tmp / "routes.json"), DB_FILE=str(tmp / "taxi.db"),
+                  FERNET_KEY_FILE=str(tmp / "fernet.key"), SESSION_SECRET="", API_ID="1", API_HASH="x",
+                  BROADCAST_MAX_PER_DAY="2")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from aiohttp import web
 from aiogram import Bot
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.telegram import TelegramAPIServer
 import main as m
-import aggregator, pipeline, store
-aggregator.POLL_SEC = 0.1       # broadcaster tez tekshirsin (test uchun)
+import pipeline, store
 
 ADMIN, STRANGER = 1, 2
 U = lambda i, n="Ali": {"id": i, "is_bot": False, "first_name": n}
@@ -561,85 +561,223 @@ async def run():
     check("xizmatsiz yo'nalish: maxfiy guruhga tushmaydi", not [x for x in new() if str(x[0]) == "-1009999"])
     _routes.remove("Termiz", "Toshkent")
 
-    # ---------- Agregator / tarqatkich (soxta userbot) ----------
-    import admin as _admin
+    # ---------- Haydovchi kabineti: akkaunt ulash, guruhlar, rassilka (soxta Telethon) ----------
+    from types import SimpleNamespace
+    from database import crud as _crud
+    from handlers import driver_cabinet as dc
+    from services import crypto as _crypto
+    from services import userbot_auth as _auth
+    from services.broadcaster import manager as _mgr
 
-    class FakeDialog:
-        def __init__(self, i, t):
-            self.id, self.title, self.is_group, self.is_channel = i, t, True, False
+    class SessionPasswordNeededError(Exception):
+        pass
 
-    class FakeUserbot:
+    class PasswordHashInvalidError(Exception):
+        pass
+
+    class ChatWriteForbiddenError(Exception):
+        pass
+
+    class FakeClient:
         def __init__(self):
-            self.sent, self.logged_out = [], False
+            self.sent, self.logged_out, self.connected, self.handlers = [], False, False, []
+            self.session = SimpleNamespace(save=lambda: "SESSION-STR")
+
+        async def connect(self):
+            self.connected = True
+
+        def is_connected(self):
+            return self.connected
+
+        async def is_user_authorized(self):
+            return True
+
+        async def send_code_request(self, phone):
+            self.phone = phone
+            return SimpleNamespace(phone_code_hash="h")
+
+        async def sign_in(self, phone=None, code=None, phone_code_hash=None, password=None):
+            if code is not None:
+                self.code = code
+                raise SessionPasswordNeededError()
+            if password != "pw":
+                raise PasswordHashInvalidError()
+
+        async def get_me(self):
+            return SimpleNamespace(id=555, username="drv", first_name="Ali", last_name=None)
+
+        def add_event_handler(self, h, ev):
+            self.handlers.append(h)
 
         async def iter_dialogs(self):
-            for d in (FakeDialog(-100801, "Termiz Toshkent Taksi"), FakeDialog(-100802, "Denov Termiz taksi")):
-                yield d
+            for i, t in ((-100801, "Termiz Toshkent Taksi"), (-100802, "Denov taksi"), (-1009999, "Yopiq guruh")):
+                yield SimpleNamespace(id=i, title=t, is_group=True)
 
         async def send_message(self, chat_id, text):
+            if chat_id == -100802:
+                raise ChatWriteForbiddenError()
             self.sent.append((chat_id, text))
 
         async def log_out(self):
             self.logged_out = True
 
-    fake = FakeUserbot()
-    _admin.userbot = fake
-    AV = PRIV()
+        async def disconnect(self):
+            self.connected = False
 
-    def acb(data, mid_=960):
-        return cbq(uid[0] + 1, U(ADMIN), data, {**CBM, "chat": AV, "message_id": mid_})
+    fc = FakeClient()
+    _auth.client_factory = lambda: fc
+    _mgr.sleep = lambda s: asyncio.sleep(min(s, 0.05))
+    DRV = 70
+    DV = PRIV(DRV)
+
+    def dcb(data, mid_=970):
+        return cbq(uid[0] + 1, U(DRV, "Haydovchi"), data, {**CBM, "chat": DV, "message_id": mid_})
+
+    def acb(data, mid_=980):
+        return cbq(uid[0] + 1, U(ADMIN), data, {**CBM, "chat": PRIV(), "message_id": mid_})
 
     new()
-    await step(msg("/agregator", chat=AV, user=U(ADMIN))); r = new()
-    check("agregator menyu (pastdan reply tugmalar)", r and "tarqatish" in r[0][1]
-          and "Guruhlar" in markups[-1][1] and "keyboard" in markups[-1][1], (r, markups[-1:]))
-    await step(msg("/agregator", chat=AV, user=U(STRANGER))); check("begona agregator jim", not new())
+    await step(dcb("role:driver")); r = new()
+    check("haydovchi roli kabinetni ochadi", r and "Haydovchi kabineti" in r[-1][1]
+          and "Akkauntni ulash" in json.loads(markups[-1][1])["keyboard"][0][0]["text"], (r, markups[-1:]))
+    await step(msg(dc.BTN_CONNECT, chat=DV, user=U(DRV))); r = new()
+    check("ulash: telefon so'raladi", r and "telefon" in r[-1][1], r)
+    await step(msg("+998 90 111 22 33", chat=DV, user=U(DRV))); r = new()
+    check("kod so'raladi, bo'sh joy bilan yozish tushuntiriladi",
+          fc.phone == "+998901112233" and r and "1 2 3 4 5" in r[-1][1], (getattr(fc, "phone", None), r))
+    deleted.clear()
+    await step(msg("1 2 3 4 5", chat=DV, user=U(DRV))); r = new()
+    check("kod qabul qilindi, chatdan o'chirildi, 2FA so'raladi",
+          fc.code == "12345" and deleted and r and "2FA" in r[-1][1], (deleted, r))
+    await step(msg("xato", chat=DV, user=U(DRV))); r = new()
+    check("noto'g'ri parol", r and "Noto'g'ri" in r[-1][1], r)
+    await step(msg("pw", chat=DV, user=U(DRV))); r = new()
+    row = _crud.get_session(DRV)
+    check("akkaunt ulandi, sessiya shifrlangan holda saqlandi",
+          row and row["session_enc"] != "SESSION-STR" and _crypto.decrypt(row["session_enc"]) == "SESSION-STR"
+          and _mgr.is_connected(DRV) and any("Akkaunt ulandi" in x[1] for x in r), (row and dict(row), r))
 
-    # E'lon matni (reply tugma -> FSM -> matn)
-    await step(msg(aggregator.BTN_TEXT, chat=AV, user=U(ADMIN))); new()
-    await step(msg("Yo'lovchilar! Termizdan Toshkentga har kuni, qulay narx.", chat=AV, user=U(ADMIN)))
-    check("e'lon matni saqlandi", aggregator.get_text().startswith("Yo'lovchilar"))
+    await step(msg(dc.BTN_GROUPS, chat=DV, user=U(DRV))); r = new()
+    check("guruhlar sahifalangan ro'yxatda, yopiq guruh chiqmaydi",
+          r and "Guruhlarni tanlang" in r[-1][1] and "dc:g:-100801" in markups[-1][1]
+          and "-1009999" not in markups[-1][1], (r, markups[-1:]))
+    await step(dcb("dc:g:-100801:0"))
+    _crud.set_setting("max_groups", 1)
+    answers.clear()
+    await step(dcb("dc:g:-100802:0"))
+    check("maks. guruh limiti", answers and "Ko'pi bilan 1" in (answers[-1] or "")
+          and len(_crud.selected_groups(DRV)) == 1, answers)
+    _crud.set_setting("max_groups", 12)
+    await step(dcb("dc:g:-100802:0"))
+    check("ikki guruh tanlandi va o'qish keshiga tushdi",
+          len(_crud.selected_groups(DRV)) == 2 and _mgr.selected[DRV] == {-100801, -100802}, _mgr.selected)
 
-    # Guruhlar (reply tugma -> inline tanlash)
-    await step(msg(aggregator.BTN_GROUPS, chat=AV, user=U(ADMIN)))
-    check("guruhlar userbotdan keladi", set(aggregator.groups()) == {"-100801", "-100802"}, aggregator.groups())
-    await step(acb("agg:g:-100801"))
-    check("guruh tanlandi", aggregator.active_group_ids() == [-100801], aggregator.active_group_ids())
-    await step(acb("agg:done"))
+    await step(msg(dc.BTN_TEXT, chat=DV, user=U(DRV))); new()
+    await step(msg("Termiz → Toshkent, bugun 18:00, 3 joy bor", chat=DV, user=U(DRV))); new()
+    check("e'lon matni saqlandi", _crud.get_session(DRV)["ad_text"].startswith("Termiz"))
+    await step(msg(dc.BTN_START, chat=DV, user=U(DRV))); r = new()
+    check("ruxsatsiz rassilka yoqilmaydi", r and "ruxsat" in r[-1][1] and not _mgr.is_running(DRV), r)
 
-    # Hozir yuborish (reply tugma -> inline tasdiqlash -> darhol)
+    # ---------- /admin ----------
+    await step(msg("/admin", chat=PRIV(STRANGER), user=U(STRANGER))); check("begona /admin jim", not new())
+    await step(msg("/admin", chat=PRIV(), user=U(ADMIN))); r = new()
+    check("/admin panel", r and "Admin panel" in r[-1][1] and "ap:stats" in markups[-1][1], r)
+    answers.clear()
+    await step(cbq(uid[0] + 1, U(STRANGER), "ap:stats", {**CBM, "chat": PRIV(STRANGER)}))
+    check("begona ap: tugmasi rad etiladi", answers and "Faqat adminlar" in (answers[-1] or ""), answers)
+    await step(acb("ap:search")); new()
+    await step(msg("70", chat=PRIV(), user=U(ADMIN))); r = new()
+    check("haydovchi ID bo'yicha topildi", r and "ID: <code>70</code>" in r[-1][1] and "ap:sub:70:7" in markups[-1][1], r)
+    await step(acb("ap:sub:70:7")); r = new()
+    check("+7 kun ruxsat berildi va haydovchiga xabar", _crud.has_access(DRV)
+          and any(str(x[0]) == "70" and "7 kunga" in x[1] for x in r), r)
+
+    fc.sent.clear()
+    await step(msg(dc.BTN_START, chat=DV, user=U(DRV)))
+    kbs = [json.dumps(json.loads(m_[1]), ensure_ascii=False) for m_ in markups[-3:] if m_[1].startswith("{")]
+    check("rassilka boshlandi, tugma «To'xtatish» ga almashdi",
+          any("Rassilka boshlandi" in x[1] for x in sent[mark[0]:]) and _mgr.is_running(DRV)
+          and any(dc.BTN_STOP in k for k in kbs), (sent[mark[0]:], kbs))
+    await asyncio.sleep(.5); r = new()
+    check("e'lon guruhga yuborildi, yozib bo'lmagan guruh tanlovdan chiqdi, haydovchi ogohlantirildi",
+          any(c == -100801 for c, _ in fc.sent) and _crud.selected_groups(DRV) == [(-100801, "Termiz Toshkent Taksi")]
+          and any(str(x[0]) == "70" and "tanlovdan chiqarildi" in x[1] for x in r), (fc.sent, r))
+
+    # O'qish: haydovchi tanlagan guruhdagi yo'lovchi e'loni yopiq guruhga tushadi (bir marta)
+    def ev(text, sender=777, mid_=1, chat=-100801):
+        async def gs():
+            return SimpleNamespace(first_name="Vali", last_name=None, username="vali", bot=False)
+
+        async def gc():
+            return SimpleNamespace(title="Termiz Toshkent Taksi", username="termiz_taksi")
+        return SimpleNamespace(chat_id=chat, id=mid_, raw_text=text, sender_id=sender, is_group=True,
+                               get_sender=gs, get_chat=gc)
+
     new()
-    await step(msg(aggregator.BTN_SEND, chat=AV, user=U(ADMIN))); r = new()
-    check("yuborishdan oldin tasdiqlash so'raladi", any("yuborilsinmi" in x[1] for x in r), r)
-    fake.sent.clear(); new()
-    await step(acb("agg:send_do")); r = new()
-    check("tasdiqlab hamma guruhga darhol yuborildi", any(c == -100801 and "Termizdan" in t for c, t in fake.sent)
-          and any("guruhga yuborildi" in x[1] for x in r), (fake.sent, r))
+    e1 = ev("Termizdan Toshkentga taksi kerak 2 kishi +998900000044", mid_=11)
+    await fc.handlers[0](e1); await asyncio.sleep(.3); r = new()
+    check("haydovchi guruhidan yo'lovchi e'loni yopiq guruhga tushdi",
+          any(str(x[0]) == "-1009999" and "YO'LOVCHI" in x[1] and "termiz_taksi" in x[1] for x in r), r)
+    await _mgr.on_message(DRV, e1); await asyncio.sleep(.2)
+    check("bir xabar ikki marta ishlanmaydi", not new())
+    await _mgr.on_message(DRV, ev("Toshkentga ketaman, kim bor? 4 joy bosh", mid_=12)); await asyncio.sleep(.2)
+    check("haydovchi e'loni yopiq guruhga tushmaydi", not new())
+    await _mgr.on_message(DRV, ev("Samarqandga taksi kerak", sender=555, mid_=13)); await asyncio.sleep(.2)
+    check("ulangan akkauntning o'z xabari o'qilmaydi", not new())
+    await _mgr.on_message(DRV, ev("Buxoroga taksi kerak", chat=-100999, mid_=14)); await asyncio.sleep(.2)
+    check("tanlanmagan guruh o'qilmaydi", not new())
 
-    # Jadval (reply tugma) + 'birinchi e'lon' xabari
-    fake.sent.clear(); new()
-    await step(msg(aggregator.BTN_SCHED_ON, chat=AV, user=U(ADMIN)))
-    check("jadval yoqildi", aggregator.is_active())
-    await asyncio.sleep(.6); r = new()
-    check("jadval: userbot yubordi + birinchi e'lon xabari", any(c == -100801 for c, t in fake.sent)
-          and any(str(x[0]) == "1" and "Birinchi e'loningiz" in x[1] for x in r), (fake.sent, r))
-    await step(msg(aggregator.BTN_SCHED_OFF, chat=AV, user=U(ADMIN))); check("jadval o'chadi", not aggregator.is_active())
+    await step(acb("ap:stats")); r = new() + [("edit", e[1]) for e in edits[-1:]]
+    check("statistika: aktiv rassilka va sessiya", any("qilayotganlar: <b>1" in x[1] or "qilayotganlar: 1" in x[1]
+                                                      for x in r) or "Statistika" in stored.get("t", ""), r)
+    st = __import__("handlers.admin_panel", fromlist=["x"]).stats_text()
+    check("statistika matni", "ulagan haydovchilar: <b>1</b>" in st and "qilayotganlar: <b>1</b>" in st, st)
 
-    # Hisobot (reply tugma)
-    await step(msg(aggregator.BTN_REPORT, chat=AV, user=U(ADMIN))); r = new()
-    check("hisobot 24 soat", r and "Oxirgi 24 soat" in r[-1][1], r)
+    # Global Stop
+    await step(acb("ap:gstop")); await step(acb("ap:gstop_do"))
+    check("Global Stop hamma rassilkani to'xtatadi", not _mgr.is_running(DRV) and _crud.get_setting("global_stop")
+          and not _crud.get_session(DRV)["is_running"])
+    new()
+    await step(msg(dc.BTN_START, chat=DV, user=U(DRV))); r = new()
+    check("Global Stop paytida yoqib bo'lmaydi", r and "to'xtatgan" in r[-1][1] and not _mgr.is_running(DRV), r)
+    await step(acb("ap:gstop"))
+    check("Global Stop o'chirildi", not _crud.get_setting("global_stop"))
 
-    # Rolni o'zgartirish (reply tugma -> rol tanlash) -> haydovchi roli menyuni ochadi
-    await step(msg(aggregator.BTN_ROLE, chat=AV, user=U(ADMIN))); r = new()
-    check("rolni o'zgartirish: rol tanlash", r and "Siz kimsiz" in r[-1][1] and "role:driver" in markups[-1][1], (r, markups[-1:]))
-    await step(acb("role:driver")); r = new()
-    check("haydovchi roli (admin) menyuni ochadi", r and "tarqatish" in r[-1][1]
-          and "Guruhlar" in markups[-1][1] and "keyboard" in markups[-1][1], (r, markups[-1:]))
+    # Smart Routing: yo'nalish -> yopiq guruh
+    await step(acb("ap:radd")); new()
+    await step(msg("Toshkent - Samarqand", chat=PRIV(), user=U(ADMIN))); r = new()
+    check("yo'nalish nomi qabul qilindi, chat_id so'raladi", r and "chat_id" in r[-1][1], r)
+    await step(msg("-100777", chat=PRIV(), user=U(ADMIN))); r = new()
+    rs = _crud.all_routes()
+    check("yo'nalish yopiq guruh bilan saqlandi", rs and rs[-1]["chat_id"] == -100777, [dict(x) for x in rs])
+    await step(msg("Toshkentdan Samarqandga taksi kerak 1 kishi +998900000055", user=U(82))); r = new()
+    check("e'lon yo'nalishning yopiq guruhiga tushdi", any(str(x[0]) == "-100777" for x in r)
+          and not any(str(x[0]) == "-1009999" for x in r), r)
+    await step(msg("Termizdan Toshkentga taksi kerak 1 kishi +998900000066", user=U(83)))
+    check("ro'yxatda yo'q yo'nalish o'tmaydi", not [x for x in new() if str(x[0]).startswith("-100")])
+    await step(acb(f"ap:rdel:{rs[-1]['id']}"))
+    check("yo'nalish o'chirildi", not _crud.all_routes())
 
-    # Akkauntni uzish (reply tugma -> inline tasdiqlash)
-    await step(msg(aggregator.BTN_LOGOUT, chat=AV, user=U(ADMIN))); new()
-    await step(acb("agg:logout_do"))
-    check("akkaunt uzildi", fake.logged_out and _admin.userbot is None and not aggregator.is_active(), fake.logged_out)
+    # Bloklash
+    await step(acb("ap:blk:70"))
+    check("bloklandi", _crud.is_blocked(DRV)); new()
+    await step(msg(dc.BTN_HELP, chat=DV, user=U(DRV))); r = new()
+    check("bloklangan foydalanuvchi to'xtatiladi", r and "bloklangansiz" in r[-1][1], r)
+    await step(acb("ap:blk:70"))
+    check("blokdan chiqarildi", not _crud.is_blocked(DRV))
+
+    # Umumiy xabarnoma
+    copied.clear()
+    await step(acb("ap:bcast")); new()
+    await step(msg("Hurmatli foydalanuvchilar!", chat=PRIV(), user=U(ADMIN))); r = new()
+    check("xabarnoma: auditoriya so'raladi", r and "Kimga" in r[-1][1] and "ap:bc:all" in markups[-1][1], r)
+    await step(acb("ap:bc:driver")); await asyncio.sleep(.3); r = new()
+    check("xabarnoma haydovchilarga yetdi", ("70", "1") == copied[0][:2] if copied else False, copied)
+
+    # Akkauntni uzish
+    await step(dcb("dc:logout_do"))
+    check("akkaunt uzildi, sessiya o'chirildi", fc.logged_out and _crud.get_session(DRV) is None
+          and not _mgr.is_connected(DRV))
 
     print("\n/stats:", pipeline.stats, flush=True)
     pending.clear()

@@ -6,7 +6,18 @@ moderation.json
 users.json
 routes.json
 aggregator.json
+taxi.db
+taxi.db-*
+fernet.key
 *.tmp
 .venv/
 __pycache__/
 .pytest_cache/
+
+# Server SSH kalitlari (maxfiy)
+*.key
+*.key.pub
+*.pem
+ssh-key-*
+id_rsa*
+id_ed25519*
