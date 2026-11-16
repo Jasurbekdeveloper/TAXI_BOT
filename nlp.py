@@ -48,6 +48,11 @@ DRIVER_KW = {
     "joy bosh": 3, "joylar bor": 3, "bor joy": 3, "kishi bor joy": 4, "kishilik joy": 3, "orin bor": 3, "bosh orin": 3, "joyimiz bor": 3,
     "yolovchi olamiz": 3, "odam olamiz": 3, "pochta olamiz": 3, "yolovchilar kerak": 3,
     "zakaz olaman": 3, "zakaz olamiz": 3, "dostavka qilamiz": 2,
+    # "2 kishi kerak", "ayol kishi bor" — haydovchi yo'lovchi yig'yapti ("kishi bor" yo'lovchi kalitini bosadi)
+    "kishi kerak": 3, "yolavchi kerak": 3, "yolavchi olaman": 3, "yolavchi olamiz": 3,
+    "ayol kishi bor": 4, "ayol bor": 3, "ayol yolovchi bor": 3, "ayol yolavchi bor": 3, "ayollar bor": 3,
+    "pochta ham olamiz": 3, "pochta xam olamiz": 3, "pochta ham olaman": 3, "pochta xam olaman": 3,
+    "oldi bosh": 3, "oldi joy bosh": 3, "yolga chiqamiz": 2, "yolga chiqaman": 2,
     # mashina nomlari — kuchsiz belgi
     "cobalt": 1, "kobalt": 1, "gentra": 1, "nexia": 1, "neksiya": 1, "lacetti": 1,
     "malibu": 1, "spark": 1, "damas": 1, "kaptiva": 1, "captiva": 1, "tracker": 1,
@@ -81,7 +86,8 @@ CITIES = {
     "Termiz": ["termiz", "termez"],
     "Denov": ["denov", "denau"],
     "Surxondaryo": ["surxondaryo", "surxandaryo", "surxandarya", "surxon", "surxan"],
-    "Sherobod": ["sherobod", "sherabad"],
+    "Sherobod": ["sherobod", "sherabad", "sherabot", "sherobot"],
+    "Muzrabot": ["muzrabot", "muzrabod"],
     "Sho'rchi": ["shorchi", "shurchi"],
     "Boysun": ["boysun", "baysun"],
     "Qumqo'rg'on": ["qumqorgon", "kumkurgan"],

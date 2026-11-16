@@ -46,6 +46,11 @@ CASES = [
     ("Assalomu alaykum Toshkentga ketaman yoʻlovchi kerak", "driver", None, "Toshkent", None, None),
     ("Toshkentga ketaman 4 joy bosh", "driver", None, "Toshkent", 4, None),
     ("Toshkentga ketaman bugun, 2 kishi bor joy", "driver", None, "Toshkent", 2, "bugun"),
+    ("Сурхондарёдан Тошкент кетамиз 2⃣киши керак Термиз Ангор Шеработдан 👠 айол киши бор 📦 Почта хам оламиз",
+     "driver", "Surxondaryo", "Toshkent", 2, None),
+    ("SURXONDARYODAN TOSHKENTGA KETAMIZ ERTAGA MUZRABOTDAN 3 TA JOY BOR OLDI BOʻSH AYOL YOʻLAVCHI BOR",
+     "driver", "Surxondaryo", "Toshkent", 3, "ertaga"),
+    ("Toshkentdan Termizga ketamiz, oldi bo'sh, yo'lga chiqamiz", "driver", "Toshkent", "Termiz", None, None),
 ]
 
 
