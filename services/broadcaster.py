@@ -146,6 +146,10 @@ class Manager:
     async def on_message(self, uid: int, event):
         """Haydovchi tanlagan guruhdagi xabar -> pipeline. Boshqa akkaunt allaqachon ko'rgan bo'lsa o'tkaziladi."""
         chat_id = event.chat_id
+        from services import donor_parser
+        if donor_parser.is_donor(chat_id):              # haydovchi akkaunti donor guruhga a'zo bo'lsa ham o'qiladi
+            await donor_parser.handle(event, exclude_sender_ids=set(self.tg_ids.values()))
+            return
         if chat_id not in self.selected.get(uid, ()) or not getattr(event, "is_group", False):
             return
         text = event.raw_text

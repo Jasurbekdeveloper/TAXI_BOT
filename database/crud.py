@@ -242,6 +242,61 @@ def delete_route(route_id: int) -> bool:
     return conn().execute("DELETE FROM routes WHERE id=?", (route_id,)).rowcount > 0
 
 
+# ---------- donor_groups ----------
+def all_donors():
+    return conn().execute("SELECT * FROM donor_groups ORDER BY created_at").fetchall()
+
+
+def get_donor(chat_id: int):
+    return conn().execute("SELECT * FROM donor_groups WHERE chat_id=?", (chat_id,)).fetchone()
+
+
+def add_donor(chat_id: int, title: str = "") -> bool:
+    cur = conn().execute("INSERT OR IGNORE INTO donor_groups(chat_id, title, created_at) VALUES (?,?,?)",
+                         (chat_id, title, time.time()))
+    return cur.rowcount > 0
+
+
+def delete_donor(chat_id: int) -> bool:
+    return conn().execute("DELETE FROM donor_groups WHERE chat_id=?", (chat_id,)).rowcount > 0
+
+
+def set_donor_target(chat_id: int, target: int | None, title: str = ""):
+    conn().execute("UPDATE donor_groups SET target_chat_id=?, target_title=? WHERE chat_id=?", (target, title, chat_id))
+
+
+def set_donor_enabled(chat_id: int, on: bool):
+    conn().execute("UPDATE donor_groups SET enabled=? WHERE chat_id=?", (int(on), chat_id))
+
+
+def donor_forwarded(chat_id: int):
+    conn().execute("UPDATE donor_groups SET forwarded=forwarded+1 WHERE chat_id=?", (chat_id,))
+
+
+# ---------- dispatched (donor dublikatlari) ----------
+def seen_recently(keys: list[str], ttl_sec: float, now: float | None = None) -> bool:
+    """Kalitlardan biri ttl ichida uzatilgan bo'lsa True."""
+    if not keys:
+        return False
+    now = time.time() if now is None else now
+    c = conn()
+    c.execute("DELETE FROM dispatched WHERE ts < ?", (now - max(ttl_sec, DAY),))
+    q = f"SELECT 1 FROM dispatched WHERE ts >= ? AND key IN ({','.join('?' * len(keys))}) LIMIT 1"
+    return c.execute(q, (now - ttl_sec, *keys)).fetchone() is not None
+
+
+def mark_dispatched(keys: list[str], now: float | None = None):
+    now = time.time() if now is None else now
+    for k in keys:
+        conn().execute("INSERT INTO dispatched(key, ts) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET ts=excluded.ts",
+                       (k, now))
+
+
+def unmark_dispatched(keys: list[str]):
+    for k in keys:
+        conn().execute("DELETE FROM dispatched WHERE key=?", (k,))
+
+
 # ---------- bot_settings ----------
 def get_setting(key: str) -> int:
     row = conn().execute("SELECT value FROM bot_settings WHERE key=?", (key,)).fetchone()

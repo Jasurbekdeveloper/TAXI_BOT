@@ -644,8 +644,9 @@ async def run():
     await step(msg(dc.BTN_CONNECT, chat=DV, user=U(DRV))); r = new()
     check("ulash: telefon so'raladi", r and "telefon" in r[-1][1], r)
     await step(msg("+998 90 111 22 33", chat=DV, user=U(DRV))); r = new()
-    check("kod so'raladi, bo'sh joy bilan yozish tushuntiriladi",
-          fc.phone == "+998901112233" and r and "1 2 3 4 5" in r[-1][1], (getattr(fc, "phone", None), r))
+    check("kod so'raladi: raqamli klaviatura chiqadi",
+          fc.phone == "+998901112233" and r and "Kodni pastdagi tugmalar" in r[-1][1]
+          and "dc:k:ok" in markups[-1][1], (getattr(fc, "phone", None), r))
     deleted.clear()
     await step(msg("1 2 3 4 5", chat=DV, user=U(DRV))); r = new()
     check("kod qabul qilindi, chatdan o'chirildi, 2FA so'raladi",
@@ -807,6 +808,61 @@ async def run():
     await step(dcb("dc:logout_do"))
     check("akkaunt uzildi, sessiya o'chirildi", fc.logged_out and _crud.get_session(DRV) is None
           and not _mgr.is_connected(DRV))
+
+    # ---------- Donor guruhlar (Parser) ----------
+    from services import donor_parser as _dp
+
+    def dev(text, mid_, entities=(), buttons=(), chat=-100500):
+        rows = [SimpleNamespace(buttons=[SimpleNamespace(**b) for b in row]) for row in buttons]
+        m_ = SimpleNamespace(message=text, entities=list(entities), id=mid_,
+                             reply_markup=SimpleNamespace(rows=rows) if rows else None)
+
+        async def gs():
+            return SimpleNamespace(id=1, username="agg_bot", first_name="Agg", bot=True)
+        return SimpleNamespace(chat_id=chat, id=mid_, message=m_, raw_text=text, sender_id=1, get_sender=gs)
+
+    await step(acb("ap:donors"))
+    check("admin: donor bo'limi", "Donor guruhlar (Parser)" in stored.get("t", "") and "Texnik userbot" in stored.get("t", ""),
+          stored.get("t"))
+    await step(acb("ap:dadd")); new()
+    await step(msg("-1009999", chat=PRIV(), user=U(ADMIN))); r = new()
+    check("yopiq guruhni donor qilib bo'lmaydi", r and "donor qilib bo'lmaydi" in r[-1][1], r)
+    await step(msg("-100500", chat=PRIV(), user=U(ADMIN))); r = new()
+    check("donor qo'shildi", r and "Qo'shildi" in r[-1][1] and _dp.is_donor(-100500) and "ap:dtgt:-100500" in markups[-1][1], r)
+
+    t_ = "🚖 Denovdan Samarqand ketish qancha bo'lyapti\nКлиент личкаси\n📢 Kanalimizga obuna bo'ling @reklama"
+    off = len(t_[:t_.index("Клиент")].encode("utf-16-le")) // 2
+    ent = SimpleNamespace(offset=off, length=14, url="tg://user?id=5551234")
+    res_ = await _dp.handle(dev(t_, 1, [ent])); await asyncio.sleep(.3); r = new()
+    out = [x for x in r if str(x[0]) == "-1009999"]
+    check("donor: mijoz yopiq guruhga yashirin havola va tugma bilan uzatildi",
+          res_ == "sent" and out and "Yangi mijoz aniqlandi!" in out[-1][1] and "<code>5551234</code>" in out[-1][1]
+          and 'href="tg://user?id=5551234"' in out[-1][1] and "obuna" not in out[-1][1]
+          and "tg://user?id=5551234" in markups[-1][1] and "take" in markups[-1][1], (res_, r, markups[-1:]))
+    check("donor: bir xil mijoz 30 daqiqada qayta uzatilmaydi",
+          await _dp.handle(dev("Denovdan yana taksi kerak", 2,
+                               buttons=[[{"text": "Lichka", "url": "tg://user?id=5551234"}]])) == "dup")
+    check("donor: haydovchi e'loni uzatilmaydi",
+          await _dp.handle(dev("Ertaga ertalab Toshkentga ketamz odam poshta olamz +998998269111", 3)) == "driver")
+    hid = sorted(HIDDEN)[0]
+    res_ = await _dp.handle(dev("Navoiyga taksi kerak 1 kishi", 4,
+                                buttons=[[{"text": "Профиль", "url": f"tg://user?id={hid}"}]]))
+    await asyncio.sleep(.3); r = new()
+    check("donor: maxfiy profil tugmasi rad etilsa tugmasiz yuboriladi, «Oldim» qoladi",
+          res_ == "sent" and any(str(x[0]) == "-1009999" and "Navoiy" in x[1] for x in r)
+          and f"tg://user?id={hid}" not in markups[-1][1] and "take" in markups[-1][1], (r, markups[-1:]))
+
+    await step(acb("ap:dtgt:-100500")); new()
+    await step(msg("-100777", chat=PRIV(), user=U(ADMIN))); r = new()
+    check("donor yopiq guruhga bog'landi", _crud.get_donor(-100500)["target_chat_id"] == -100777, r)
+    await _dp.handle(dev("Qarshiga taksi kerak +998901234000", 5)); await asyncio.sleep(.3); r = new()
+    check("donor mijozi bog'langan guruhga tushdi", any(str(x[0]) == "-100777" and "Qarshi" in x[1] for x in r), r)
+    await step(acb("ap:dtog:-100500"))
+    check("donor to'xtatildi", not _dp.is_donor(-100500))
+    await step(acb("ap:ddel:-100500"))
+    check("donor o'chirildi", _crud.get_donor(-100500) is None)
+    st = __import__("handlers.admin_panel", fromlist=["x"]).stats_text()
+    check("statistikada donor", "Donor: uzatildi 3" in st, st)
 
     print("\n/stats:", pipeline.stats, flush=True)
     pending.clear()

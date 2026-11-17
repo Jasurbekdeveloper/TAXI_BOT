@@ -25,6 +25,7 @@ from database import crud
 from handlers import admin_panel, driver_cabinet
 from handlers.middlewares import TrackUsers
 from pipeline import Incoming, process, sender
+from services import donor_parser
 from services.broadcaster import manager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -138,6 +139,9 @@ async def run_userbot():
     async def handler(event):
         # Guruh ham, kanal (broadcast) ham o'qiladi: akkaunt obuna bo'lsa yetarli, bot ichida bo'lishi shart emas
         if not ((event.is_group or event.is_channel) and event.raw_text) or event.chat_id in routes.closed_chat_ids():
+            return
+        if donor_parser.is_donor(event.chat_id):        # donor guruh: yashirin havola/User ID bilan alohida oqim
+            await donor_parser.handle(event, exclude_sender_ids=set(manager.tg_ids.values()))
             return
         chat = await event.get_chat()
         # Faqat kuzatuv ro'yxatidagi guruh/kanal (haydovchilar tanlagan guruhlarni services/broadcaster o'qiydi)

@@ -20,7 +20,23 @@ def normalize(text: str) -> str:
     t = re.sub(r"\bposhta", "pochta", t)    # "powta"/"pashta" -> pochta
     t = re.sub(r"\bpashta", "pochta", t)
     t = re.sub(r"[^\w\s+]", " ", t)
+    t = _fix_typos(t)
     return re.sub(r"\s+", " ", t).strip()
+
+
+# Taksi guruhlaridagi tez yozilgan fe'llar: "ketamz", "olamz", "ketvomiz", "ketyabmiz" -> to'liq shakl
+_TYPO_RE = [
+    (re.compile(r"\b(\w+?[aeiouy])mz\b"), r"\1miz"),                       # ketamz, olamz, boramz -> ...amiz
+    (re.compile(r"\b(\w+?)pmz\b"), r"\1pmiz"),                             # ketyapmz -> ketyapmiz
+    (re.compile(r"\bket(?:vo|vot|vom|op|ob|yab|yob|yopt?)(miz|man|mz)\b"), r"ketyap\1"),   # ketvomiz -> ketyapmiz
+    (re.compile(r"\bket(?:vo|vot|vom|op|ob|yab|yob)(m)\b"), r"ketyapman"),
+]
+
+
+def _fix_typos(t: str) -> str:
+    for rx, rep in _TYPO_RE:
+        t = rx.sub(rep, t)
+    return t
 
 
 # ---------- Kalit so'zlar (apostrofsiz, lotincha) ----------
@@ -60,6 +76,10 @@ DRIVER_KW = {
     "cobalt": 1, "kobalt": 1, "gentra": 1, "nexia": 1, "neksiya": 1, "lacetti": 1,
     "malibu": 1, "spark": 1, "damas": 1, "kaptiva": 1, "captiva": 1, "tracker": 1,
 }
+# "odam pochta olamiz", "2 ta odam olamiz", "yo'lovchi ham olaman" — haydovchi yo'lovchi/pochta yig'yapti
+DRIVER_TAKE_RE = re.compile(
+    r"\b(odam|kishi|yolovchi|yolavchi|pochta|posilka|yuk|zakaz|passajir)\w*(?: \w+){0,2} "
+    r"(olamiz|olaman|olib ketamiz|olib ketaman|olib boramiz|olib boraman)\b")
 NEGATED_RE = re.compile(r"\b\w+ kerak(?: emas| mas| yoq)\b|\b\w+ kerakmas\b")
 # AI'ga arziydigan xabar belgilari (shahar tilga olinmagan bo'lsa ham)
 TAXI_HINT_RE = re.compile(
@@ -259,6 +279,8 @@ def analyze(raw: str) -> Parsed:
     p, d = _score(positive, PASSENGER_KW), _score(positive, DRIVER_KW)
     if FREE_SEATS_RE.search(positive):
         d += 2
+    if DRIVER_TAKE_RE.search(positive):
+        d += 3
     if DRIVER_TAKES_RE.search(positive):    # "odam va pochtalar olaman", "yolovchi, pochta olamiz"
         d += 3
     if DRIVER_EXTRA_RE.search(positive):     # "qaytaman", "tom bagaj bor" — haydovchi mashinasi haqida

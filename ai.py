@@ -28,7 +28,7 @@ PROMPT = """Sen O'zbekistondagi taksi Telegram guruhlaridagi xabarlarni tahlil q
 
 Vazifa: xabar EGASI kimligini aniqla.
 - "passenger" — yo'lovchi yoki pochta jo'natuvchi: mashina/taksi QIDIRYAPTI. Belgilar: "taksi kerak", "mashina bormi", "ketishim kerak", "2 kishimiz", "joy bormi", "pochta jo'nataman", "kim olib ketadi", "нужно такси", "ищу машину".
-- "driver" — haydovchi: o'zi yo'lga chiqyapti va yo'lovchi yoki pochta QIDIRYAPTI. Belgilar: "ketamiz/ketyapman" bilan birga "joy bor", "3 ta joy", "bo'sh joy", "oldi bo'sh", "2 kishi kerak", "odam olaman", "yo'lovchi kerak", "pochta olamiz", "ayol kishi bor" (mashinada allaqachon ayol yo'lovchi bor), mashina nomi (Cobalt, Gentra, Nexia, Malibu...), "kim bor?", "беру пассажиров", "есть места".
+- "driver" — haydovchi: o'zi yo'lga chiqyapti va yo'lovchi yoki pochta QIDIRYAPTI. Belgilar: "ketamiz/ketyapman" bilan birga "joy bor", "3 ta joy", "bo'sh joy", "oldi bo'sh", "2 kishi kerak", "odam olaman", "yo'lovchi kerak", "odam olamiz", "pochta olamiz" (imlo bilan: "olamz", "poshta"), "ayol kishi bor" (mashinada allaqachon ayol yo'lovchi bor), mashina nomi (Cobalt, Gentra, Nexia, Malibu...), "kim bor?", "беру пассажиров", "есть места".
 - "other" — reklama, savol, salomlashish, guruh qoidasi va boshqalar.
 
 Muhim: "ketaman/ketamiz" ni ham yo'lovchi, ham haydovchi yozadi — kim KIMNI qidirayotganiga qara. Haydovchi e'lonida ko'pincha oraliq shaharlar ro'yxati, bir nechta telefon va "joy bor" bo'ladi. Ikkilansang confidence ni past qo'y.
@@ -44,6 +44,8 @@ FEW_SHOT = [
      {"label": "driver", "confidence": 0.96, "from": "Surxondaryo", "to": "Toshkent", "seats": 2, "time": None}),
     ("Toshkentga ketaman, kim olib ketadi? 1 kishi",
      {"label": "passenger", "confidence": 0.85, "from": None, "to": "Toshkent", "seats": 1, "time": None}),
+    ("Ertaga ertalab Toshkentga ketamz odam poshta olamz +998998269111",
+     {"label": "driver", "confidence": 0.95, "from": None, "to": "Toshkent", "seats": None, "time": "ertaga ertalab"}),
     ("Hozir Samarqandga chiqamiz, Gentra, 3 joy bo'sh",
      {"label": "driver", "confidence": 0.95, "from": None, "to": "Samarqand", "seats": 3, "time": "hozir"}),
     ("Assalomu alaykum guruhga xush kelibsiz, reklama taqiqlanadi",

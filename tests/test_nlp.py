@@ -51,6 +51,13 @@ CASES = [
     ("SURXONDARYODAN TOSHKENTGA KETAMIZ ERTAGA MUZRABOTDAN 3 TA JOY BOR OLDI BOʻSH AYOL YOʻLAVCHI BOR",
      "driver", "Surxondaryo", "Toshkent", 3, "ertaga"),
     ("Toshkentdan Termizga ketamiz, oldi bo'sh, yo'lga chiqamiz", "driver", "Toshkent", "Termiz", None, None),
+    # tez/xato yozilgan haydovchi e'lonlari
+    ("Ertaga ertalab \nToshkentga ketamz \nodam poshta olamz\n+998998269111", "driver", None, "Toshkent", None,
+     "ertaga ertalab"),
+    ("Toshkentga ketvomiz 2 odam olamz", "driver", None, "Toshkent", 2, None),
+    ("Termizga ketyabmiz pochta olamz", "driver", None, "Termiz", None, None),
+    ("Samarqandga ketamz, 2 kishimiz, mashina kerak", "passenger", None, "Samarqand", 2, None),
+    ("Pochta bor Toshkentga kim olib ketadi", "passenger", None, "Toshkent", None, None),
 ]
 
 

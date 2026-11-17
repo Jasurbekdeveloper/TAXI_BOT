@@ -79,6 +79,7 @@ AI_MODEL = os.getenv("AI_MODEL", "").strip() or "openai/gpt-oss-20b"
 AI_MIN_CONFIDENCE = _float("AI_MIN_CONFIDENCE", 0.6)
 
 DEDUP_MINUTES = _int("DEDUP_MINUTES", 45)
+DONOR_DEDUP_MINUTES = _int("DONOR_DEDUP_MINUTES", 30)   # donor mijozi (User ID/telefon) shu vaqt ichida qayta uzatilmaydi
 SEND_INTERVAL_SEC = _float("SEND_INTERVAL_SEC", 3.2)  # ~18 xabar/daqiqa
 MAX_AGE_MINUTES = _int("MAX_AGE_MINUTES", 15)         # bot o'chiq paytdagi eski xabarlarni e'lon qilmaslik
 ORDER_COOLDOWN_SEC = _int("ORDER_COOLDOWN_SEC", 120)  # bir odam haydovchilar guruhini to'ldirmasin

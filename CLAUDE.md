@@ -17,6 +17,8 @@ Taksi guruhlaridagi yo'lovchi xabarlarini aniqlab, haydovchilar guruhiga e'lon q
 | `services/crypto.py` | Fernet: `SESSION_SECRET` yoki avtomatik `fernet.key` |
 | `services/userbot_auth.py` | Haydovchi akkauntini bot ichida ulash: telefon → kod (`1 2 3 4 5`) → 2FA → StringSession shifrlanib saqlanadi |
 | `services/ad_format.py` | Haydovchi e'lonini ajratadi (marshrut, oraliq shaharlar, vaqt, joy, mashina, narx, telefonlar, pochta/ayol/oldi bo'sh) va bir xil formatga keltiradi; AI bo'sh maydonlarni to'ldiradi |
+| `services/donor_parser.py` | Donor guruhlar parseri: texnik userbot (`main.run_userbot`) yoki a'zo haydovchi akkaunti (`broadcaster.on_message`) donor xabarini beradi. text_link / mention / inline tugma (url, user_profile) dan `tg://user?id`, «User ID: 123», «Mijoz: @user», lichka tugmasidagi t.me/username, oddiy yuboruvchi. Matn reklama/link/@/hashtag dan tozalanadi. Haydovchi e'loni (`pipeline.decide`) o'tkaziladi |
+| `services/order_dispatcher.py` | «🚖 Yangi mijoz aniqlandi!» HTML shabloni, `👤 Клиент личкаси` + `✅ Buyurtmani oldim` (`take`) tugmalari, `dispatched` jadvalida 30 daq dedup (uid/username/telefon), yetkazilmasa dedup bo'shatiladi. Target: donor `target_chat_id` yoki Smart Routing |
 | `services/broadcaster.py` | `manager`: ko'p sessiya. Har akkaunt tanlangan guruhlarini O'QIYDI (→ pipeline) va TARQATADI (fon vazifa, interval, anti-spam, FloodWait/forbidden/revoked) |
 | `handlers/driver_cabinet.py` | Haydovchi kabineti (`/driver`, `role:driver`): ulash FSM, guruh tanlash (sahifalangan, `dc:*`), e'lon, interval 15/30/60, 🚀/🛑, hisobot, uzish |
 | `handlers/admin_panel.py` | `/admin` (faqat `ADMIN_IDS`, `ap:*`): statistika, haydovchilar/obuna/blok/sessiya, yo'nalishlar→yopiq guruh, sozlamalar + Global Stop, umumiy xabarnoma |
@@ -42,6 +44,8 @@ Routerlar tartibi muhim: `admin, admin_panel, moderation, panel, driver_cabinet,
 - **Admin buyruqlari:** `/add` (guruh ichida), `/addgroup @a t.me/b -100123`, `/delgroup`, `/groups` (❌ tugma bilan), `/stats`, `/help`. `/id` hamma uchun.
 - **Admin kim:** `ADMIN_IDS` yoki haydovchilar guruhi egasi/adminlari.
 - **Tasniflash (2026-11-17):** kalit so'zlar → `pipeline.decide`. AI'ga boradi: (1) noaniq xabar, (2) «yo'lovchi» chiqqan-u haydovchi belgisi ham bor (tekshiruv). AI ishonchi ≥ `AI_MIN_CONFIDENCE` (0.6) bo'lsa qabul qilinadi, tekshiruvda boshqacha desa AI ustun (`stats.ai_overrides`). AI ishlamasa kalit so'z natijasi qoladi. `AI_API_KEY` bo'sh bo'lsa noaniq xabar tashlanadi. Log: `[label/kw|ai]`.
+- **Donor parser (2026-11-17):** `/admin` → «🕵️‍♂️ Donor guruhlar (Parser)»: qo'shish (forward / @username / chat_id; yopiq guruh rad etiladi), ⏸/▶️, «🎯 Yopiq guruhga bog'lash», o'chirish. Jadvallar `donor_groups`, `dispatched`. `DONOR_DEDUP_MINUTES`=30. Statistika: `donor`, `donor_skipped`.
+- **Imlo xatolari (2026-11-17):** `nlp._fix_typos`: «ketamz/olamz» → «ketamiz/olamiz», «ketvomiz/ketyabmiz» → «ketyapmiz»; `DRIVER_TAKE_RE` («odam/pochta … olamiz» → +3). AI noaniq xabarni yo'lovchi deyishi uchun, kalit so'zlar haydovchi tomonga og'gan bo'lsa, ishonch ≥ 0.85 kerak.
 - **Guruh qidiruvi va admin kontakti (2026-11-17):** guruh tanlashda «🔎 Nomi bo'yicha qidirish» (`dc:search`, FSM `GroupSearch`, filtr FSM data `gq` da, `normalize` bilan kirill=lotin). Ruxsat yo'q/blok/Global Stop/API yo'q xabarlarida bog'lanish tugmasi.
 - **E'lon formatlash (2026-11-17):** kabinetda «✍️ E'lon matni» → `ad_format.build` → oldindan ko'rish: «✅ Shu ko'rinishda» / «📝 O'z matnim» / «✏️ Qayta yozish». Userbot e'lonni `parse_mode=None` bilan yuboradi.
 - **E'lon:** marshrut, vaqt, kishi soni, telefon, profil, manba havolasi, «✅ Oldim», «💬 Yozish».
@@ -61,15 +65,15 @@ Routerlar tartibi muhim: `admin, admin_panel, moderation, panel, driver_cabinet,
 - **Rejimlar:** `MODE=bot|userbot|both`. Userbot `/addgroup` bilan ochiq guruhga o'zi qo'shiladi. Taklif havolasi qo'llab-quvvatlanmaydi.
 
 ## `.env` kalitlari
-`MODE, BOT_TOKEN, DRIVERS_CHAT_ID, SOURCE_CHATS, ADMIN_IDS, GROUPS_FILE, MOD_FILE, USERS_FILE, ROUTES_FILE, ROUTE_FILTER_STRICT, ADMIN_USERNAME, BROADCAST_MAX_PER_DAY, AI_MIN_CONFIDENCE, DB_FILE, SESSION_SECRET, FERNET_KEY_FILE, API_ID, API_HASH, SESSION_NAME, AI_API_KEY, AI_BASE_URL, AI_MODEL, DEDUP_MINUTES, SEND_INTERVAL_SEC, MAX_AGE_MINUTES, ORDER_COOLDOWN_SEC, OFFER_IN_GROUPS, USE_SYSTEM_CA`
+`MODE, BOT_TOKEN, DRIVERS_CHAT_ID, SOURCE_CHATS, ADMIN_IDS, GROUPS_FILE, MOD_FILE, USERS_FILE, ROUTES_FILE, ROUTE_FILTER_STRICT, ADMIN_USERNAME, BROADCAST_MAX_PER_DAY, AI_MIN_CONFIDENCE, DONOR_DEDUP_MINUTES, DB_FILE, SESSION_SECRET, FERNET_KEY_FILE, API_ID, API_HASH, SESSION_NAME, AI_API_KEY, AI_BASE_URL, AI_MODEL, DEDUP_MINUTES, SEND_INTERVAL_SEC, MAX_AGE_MINUTES, ORDER_COOLDOWN_SEC, OFFER_IN_GROUPS, USE_SYSTEM_CA`
 
 `.env` qiymatlarini, tokenni, `*.session`, `fernet.key` va `taxi.db` ni chatga chiqarmang.
 
 ## Ishga tushirish va tekshirish
 ```bash
 .venv/Scripts/python main.py
-.venv/Scripts/python -m pytest -q tests        # 98 ta
-.venv/Scripts/python tests/e2e_fake_telegram.py # 152 ta, real Telegram'ga ulanmaydi
+.venv/Scripts/python -m pytest -q tests        # 117 ta
+.venv/Scripts/python tests/e2e_fake_telegram.py # 164 ta, real Telegram'ga ulanmaydi
 ```
 Bitta token bilan bir vaqtda faqat bitta nusxa ishlashi kerak.
 

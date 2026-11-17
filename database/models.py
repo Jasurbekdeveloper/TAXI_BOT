@@ -6,6 +6,8 @@ Jadvallar:
   session_groups  — haydovchi akkaunti a'zo bo'lgan guruhlar va tanlanganlari (selected=1)
   post_log        — tarqatilgan e'lonlar (hisobot uchun, 24 soat)
   routes          — yo'nalish (ikki shahar) va unga biriktirilgan yopiq guruh chat_id si
+  donor_groups    — parser kuzatadigan donor guruhlar va ular bog'langan yopiq guruh
+  dispatched      — donor mijozlari dublikat nazorati (User ID / username / telefon, 30 daqiqa)
   bot_settings    — admin paneldan o'zgaradigan limitlar (kalit-qiymat)
 
 Bot bitta jarayonda ishlaydi, so'rovlar mikrosoniyalik — shuning uchun oddiy sqlite3 (sinxron) yetarli.
@@ -70,6 +72,21 @@ CREATE TABLE IF NOT EXISTS routes (
     city_b   TEXT NOT NULL,
     chat_id  INTEGER,                         -- yopiq guruh. NULL = DRIVERS_CHAT_ID
     title    TEXT NOT NULL DEFAULT ''         -- yopiq guruh nomi (ko'rsatish uchun)
+);
+
+CREATE TABLE IF NOT EXISTS donor_groups (
+    chat_id         INTEGER PRIMARY KEY,      -- donor (maxfiy/ochiq) guruh yoki kanal, Telethon "marked" id (-100...)
+    title           TEXT NOT NULL DEFAULT '',
+    target_chat_id  INTEGER,                  -- qaysi yopiq guruhga uzatiladi. NULL = yo'nalish bo'yicha / DRIVERS_CHAT_ID
+    target_title    TEXT NOT NULL DEFAULT '',
+    enabled         INTEGER NOT NULL DEFAULT 1,
+    forwarded       INTEGER NOT NULL DEFAULT 0,   -- nechta mijoz uzatildi (statistika)
+    created_at      REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS dispatched (
+    key  TEXT PRIMARY KEY,                    -- "uid:123", "un:username", "ph:998901234567"
+    ts   REAL NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS bot_settings (

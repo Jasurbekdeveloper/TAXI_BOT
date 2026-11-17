@@ -19,7 +19,7 @@ from nlp import analyze, canon_city, normalize, worth_ai
 
 log = logging.getLogger(__name__)
 stats = {"seen": 0, "passenger": 0, "driver": 0, "unknown": 0, "ai_calls": 0, "ai_errors": 0,
-         "ai_overrides": 0, "dup": 0, "sent": 0, "failed": 0, "orders": 0, "relayed": 0}
+         "ai_overrides": 0, "donor": 0, "donor_skipped": 0, "dup": 0, "sent": 0, "failed": 0, "orders": 0, "relayed": 0}
 MAX_ATTEMPTS = 4
 
 
@@ -44,6 +44,8 @@ class Outgoing:
     done: asyncio.Future | None = None      # yuborish natijasi (True/False) kutayotgan uchun
     contact_url: str | None = None          # "Yozish" tugmasi
     chat_id: int | None = None              # yopiq guruh (Smart Routing). None = DRIVERS_CHAT_ID
+    style: str = "default"                  # "donor": «👤 Клиент личкаси» + «✅ Buyurtmani oldim» tugmalari
+    undo_keys: list | None = None           # donor dublikat kalitlari: yetkazilmasa bazadan olib tashlanadi
 
 
 # ---------- Dedup ----------
@@ -203,6 +205,9 @@ async def decide(raw: str, p) -> tuple[str, str, dict | None]:
                      raw[:60].replace("\n", " "))
             return res["label"], "ai", res
         return p.label, "ai", res
+    if res["label"] == "passenger" and p.scores.get("driver", 0) > p.scores.get("passenger", 0):
+        # matnda haydovchi belgilari ko'proq: maxfiy guruhga faqat AI juda ishonchli bo'lsa o'tadi
+        sure = res["confidence"] >= max(config.AI_MIN_CONFIDENCE, 0.85)
     return (res["label"] if sure else "unknown"), "ai", res
 
 
@@ -240,8 +245,12 @@ async def process(m: Incoming) -> str | None:
     return label
 
 
-def taken_kb(passenger_id=None, url=None):
+def taken_kb(passenger_id=None, url=None, style="default"):
     data = f"take:{passenger_id}" if passenger_id else "take"
+    if style == "donor":
+        rows = [[InlineKeyboardButton(text="👤 Клиент личкаси", url=url)]] if url else []
+        rows.append([InlineKeyboardButton(text="✅ Buyurtmani oldim", callback_data=data)])
+        return InlineKeyboardMarkup(inline_keyboard=rows)
     row = [InlineKeyboardButton(text="✅ Oldim", callback_data=data)]
     if url:
         row.append(InlineKeyboardButton(text="💬 Yozish", url=url))
@@ -251,7 +260,8 @@ def taken_kb(passenger_id=None, url=None):
 async def _deliver(bot: Bot, item: Outgoing):
     async def send(url):
         await bot.send_message(item.chat_id or config.DRIVERS_CHAT_ID, item.text, parse_mode="HTML",
-                               reply_markup=taken_kb(item.passenger_id, url), disable_web_page_preview=True)
+                               reply_markup=taken_kb(item.passenger_id, url, item.style),
+                               disable_web_page_preview=True)
 
     try:
         await send(item.contact_url)
@@ -303,5 +313,8 @@ async def sender(bot: Bot):
 def _give_up(item: Outgoing, error):
     stats["failed"] += 1
     _seen.pop(item.key, None)                # yetkazilmagan e'lon qayta yozilsa, dublikat sanalmasin
+    if item.undo_keys:
+        from database import crud
+        crud.unmark_dispatched(item.undo_keys)
     log.error("Yuborishda xato: %s", error)
     _finish(item, False)

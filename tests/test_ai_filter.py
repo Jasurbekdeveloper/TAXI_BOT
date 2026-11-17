@@ -97,3 +97,14 @@ def test_ad_format_ai_fills_gaps(monkeypatch):
 
 def test_ad_format_not_enough():
     assert asyncio.run(ad_format.build("Salom, qalaysizlar", use_ai=False))[0] is None
+
+
+def test_driver_leaning_unknown_needs_high_ai_confidence(fake_ai, monkeypatch):
+    _, answers = fake_ai
+    t = "Toshkentga ketamiz"                                # noaniq, lekin haydovchi tomonga og'gan
+    p = nlp.analyze(t)
+    assert p.label == "unknown" and p.scores["driver"] > p.scores["passenger"]
+    answers[t] = res("passenger", 0.7)
+    assert decide(t) == ("unknown", "ai")                   # 0.7 yetmaydi: maxfiy guruhga tushmaydi
+    answers[t] = res("passenger", 0.9)
+    assert decide(t) == ("passenger", "ai")

@@ -5,12 +5,14 @@ Bo'limlar:
   2. 👥 Haydovchilar: qidirish, obuna (+7/+30 kun, cheksiz), blok, sessiyani uzish, rassilkani to'xtatish
   3. 🗂 Yo'nalishlar va yopiq guruhlar (Smart Routing)
   4. ⚙️ Tizim sozlamalari: maks. guruhlar, minimal pauza, minimal interval, 🚨 Global Stop
-  5. 📢 Umumiy xabarnoma (matn/rasm/video) — hammaga, haydovchilarga yoki yo'lovchilarga
+  5. 🕵️‍♂️ Donor guruhlar (Parser): qo'shish/o'chirish, yoqish/o'chirish, yopiq guruhga bog'lash
+  6. 📢 Umumiy xabarnoma (matn/rasm/video) — hammaga, haydovchilarga yoki yo'lovchilarga
 Callback prefiksi: "ap:".
 """
 import asyncio
 import html
 import logging
+import re
 
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramAPIError, TelegramRetryAfter
@@ -19,11 +21,13 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
+import admin
 import config
 import pipeline
 import routes
 from database import crud
 from nlp import canon_city, known_city
+from services import donor_parser
 from services.broadcaster import manager
 
 log = logging.getLogger(__name__)
@@ -40,6 +44,8 @@ class Adm(StatesGroup):
     route_edit_chat = State()
     setting = State()
     bcast = State()
+    donor_add = State()
+    donor_target = State()
 
 
 def is_admin(user_id: int) -> bool:
@@ -59,6 +65,7 @@ def _main_kb():
         [B(text="👥 Haydovchilar va ruxsatlar", callback_data="ap:drivers")],
         [B(text="🗂 Yo'nalishlar va yopiq guruhlar", callback_data="ap:routes")],
         [B(text="⚙️ Tizim sozlamalari", callback_data="ap:settings")],
+        [B(text="🕵️‍♂️ Donor guruhlar (Parser)", callback_data="ap:donors")],
         [B(text="📢 Umumiy xabarnoma", callback_data="ap:bcast")],
     )
 
@@ -116,7 +123,9 @@ def stats_text() -> str:
         f"🚨 Global Stop: {stop}\n\n"
         f"<b>Yo'lovchi e'lonlari (restartdan beri)</b>\n"
         f"ko'rildi: {s['seen']} · yo'lovchi: {s['passenger']} · haydovchi: {s['driver']}\n"
-        f"yuborildi: {s['sent']} · dublikat: {s['dup']} · xato: {s['failed']} · buyurtma: {s['orders']}"
+        f"yuborildi: {s['sent']} · dublikat: {s['dup']} · xato: {s['failed']} · buyurtma: {s['orders']}\n"
+        f"AI: so'rov {s['ai_calls']} · tuzatdi {s['ai_overrides']} · xato {s['ai_errors']}\n"
+        f"🕵️‍♂️ Donor: uzatildi {s['donor']} · o'tkazildi {s['donor_skipped']}"
     )
 
 
@@ -503,7 +512,189 @@ async def on_gstop_do(cb: CallbackQuery):
     await cb.answer()
 
 
-# ================= 5. Umumiy xabarnoma =================
+# ================= 5. Donor guruhlar (Parser) =================
+def _reader_status() -> str:
+    ub = "🟢 ulangan" if admin.userbot is not None else "🔴 yo'q (MODE=both va login_userbot.py kerak)"
+    return (f"Texnik userbot: {ub}\n"
+            f"Onlayn haydovchi akkauntlari: {manager.connected_count()} (donor guruhga a'zo bo'lsa ular ham o'qiydi)")
+
+
+def _donor_target_label(d) -> str:
+    if d["target_chat_id"]:
+        return html.escape(d["target_title"] or str(d["target_chat_id"]))
+    return "yo'nalish bo'yicha / asosiy guruh"
+
+
+def donors_view():
+    ds = crud.all_donors()
+    lines = ["🕵️‍♂️ <b>Donor guruhlar (Parser)</b>", "",
+             "Donor guruhdagi yangi xabarlardan mijoz matni, telefon, yashirin havolalar (text_link, inline "
+             "tugmalar) va User ID ajratiladi va yopiq guruhga «Yangi mijoz aniqlandi!» ko'rinishida uzatiladi. "
+             "Haydovchi e'lonlari o'tkazib yuboriladi.", "", _reader_status(), ""]
+    if not ds:
+        lines.append("Hali donor guruh qo'shilmagan.")
+    for d in ds:
+        mark = "🟢" if d["enabled"] else "⏸"
+        lines.append(f"{mark} {html.escape(d['title'] or str(d['chat_id']))} → {_donor_target_label(d)} "
+                     f"· uzatildi: {d['forwarded']}")
+    kb = [[B(text=f"{'🟢' if d['enabled'] else '⏸'} {(d['title'] or str(d['chat_id']))[:40]}",
+             callback_data=f"ap:d:{d['chat_id']}")] for d in ds]
+    kb.append([B(text="➕ Donor guruh qo'shish", callback_data="ap:dadd")])
+    kb.append([BACK])
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=kb)
+
+
+def donor_card(chat_id: int):
+    d = crud.get_donor(chat_id)
+    if d is None:
+        return None, None
+    text = (f"🕵️‍♂️ <b>{html.escape(d['title'] or '—')}</b>\n"
+            f"ID: <code>{d['chat_id']}</code>\n"
+            f"Holat: {'🟢 kuzatilmoqda' if d['enabled'] else '⏸ to‘xtatilgan'}\n"
+            f"Yopiq guruh: {_donor_target_label(d)}\n"
+            f"Uzatilgan mijozlar: {d['forwarded']}")
+    kb = _kb([B(text="⏸ To'xtatish" if d["enabled"] else "▶️ Yoqish", callback_data=f"ap:dtog:{chat_id}")],
+             [B(text="🎯 Yopiq guruhga bog'lash", callback_data=f"ap:dtgt:{chat_id}")],
+             [B(text="❌ O'chirish", callback_data=f"ap:ddel:{chat_id}")],
+             [B(text="⬅️ Donor guruhlar", callback_data="ap:donors")])
+    return text, kb
+
+
+@router.callback_query(F.data == "ap:donors")
+async def on_donors(cb: CallbackQuery, state: FSMContext):
+    await state.clear()
+    text, kb = donors_view()
+    await _show(cb, text, kb)
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("ap:d:"))
+async def on_donor(cb: CallbackQuery):
+    text, kb = donor_card(int(cb.data[5:]))
+    if text is None:
+        await cb.answer("Topilmadi", show_alert=True)
+        return
+    await _show(cb, text, kb)
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("ap:dtog:"))
+async def on_donor_toggle(cb: CallbackQuery):
+    cid = int(cb.data[8:])
+    d = crud.get_donor(cid)
+    if d is None:
+        await cb.answer("Topilmadi", show_alert=True)
+        return
+    crud.set_donor_enabled(cid, not d["enabled"])
+    donor_parser.reload()
+    text, kb = donor_card(cid)
+    await _show(cb, text, kb)
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("ap:ddel:"))
+async def on_donor_del(cb: CallbackQuery):
+    crud.delete_donor(int(cb.data[8:]))
+    donor_parser.reload()
+    text, kb = donors_view()
+    await _show(cb, text, kb)
+    await cb.answer("O'chirildi")
+
+
+@router.callback_query(F.data == "ap:dadd")
+async def on_donor_add(cb: CallbackQuery, state: FSMContext):
+    await state.set_state(Adm.donor_add)
+    await cb.message.answer(
+        "Donor guruhni yuboring:\n"
+        "• guruhdan istalgan xabarni shu yerga <b>forward</b> qiling (eng oson), yoki\n"
+        "• <code>@username</code> / <code>https://t.me/username</code>, yoki\n"
+        "• guruh <code>chat_id</code> si (masalan <code>-1001234567890</code>)\n\n"
+        "Texnik userbot yoki haydovchi akkaunti shu guruhga <b>a'zo</b> bo'lishi kerak — bot o'zi a'zo bo'lishi "
+        "shart emas. Bekor: /cancel", parse_mode="HTML")
+    await cb.answer()
+
+
+async def _resolve_donor(msg: Message, bot: Bot) -> tuple[int, str] | str:
+    origin = msg.forward_origin
+    src = (getattr(origin, "chat", None) or getattr(origin, "sender_chat", None)) if origin else None
+    if src is not None:
+        return src.id, src.title or ""
+    raw = (msg.text or "").strip()
+    m = re.match(r"^(?:https?://)?(?:t\.me|telegram\.me)/(\+?[\w]+)", raw)
+    ref = m.group(1) if m else raw.lstrip("@")
+    if ref.startswith("+") or "joinchat" in raw:
+        return ("❌ Taklif havolasi bilan qo'shib bo'lmaydi. Texnik akkauntni guruhga qo'shing va guruhdan "
+                "xabarni forward qiling yoki chat_id ni yuboring.")
+    numeric = ref.lstrip("-").isdigit()
+    if not ref or not (numeric or re.fullmatch(r"[A-Za-z]\w{3,31}", ref)):
+        return "❌ Tushunilmadi. Xabarni forward qiling, @username yoki chat_id yuboring."
+    ub = admin.userbot
+    if ub is not None:
+        try:
+            from telethon.utils import get_peer_id
+            ent = await ub.get_entity(int(ref) if numeric else ref)
+            return get_peer_id(ent), getattr(ent, "title", "") or ""
+        except Exception as e:
+            log.info("Userbot donor guruhni topmadi (%s): %s", ref, e)
+    if numeric:
+        return int(ref), ""
+    try:
+        chat = await bot.get_chat("@" + ref)
+        return chat.id, chat.title or ""
+    except TelegramAPIError:
+        return "❌ Guruh topilmadi. Xabarni forward qiling yoki chat_id yuboring."
+
+
+@router.message(StateFilter(Adm.donor_add))
+async def on_donor_add_input(msg: Message, state: FSMContext, bot: Bot):
+    res = await _resolve_donor(msg, bot)
+    if isinstance(res, str):
+        await msg.answer(res + "\nBekor: /cancel")
+        return
+    cid, title = res
+    if cid in routes.closed_chat_ids():
+        await msg.answer("❌ Bu yopiq haydovchilar guruhi — uni donor qilib bo'lmaydi (xabarlar aylanib qoladi).\n"
+                         "Boshqasini yuboring yoki /cancel")
+        return
+    added = crud.add_donor(cid, title)
+    donor_parser.reload()
+    await state.clear()
+    text, kb = donor_card(cid)
+    await msg.answer(("✅ Qo'shildi.\n\n" if added else "ℹ️ Bu guruh allaqachon ro'yxatda.\n\n") + text
+                     + "\n\nEndi «🎯 Yopiq guruhga bog'lash» orqali mijozlar qaysi guruhga tushishini tanlang.",
+                     parse_mode="HTML", reply_markup=kb)
+
+
+@router.callback_query(F.data.startswith("ap:dtgt:"))
+async def on_donor_target(cb: CallbackQuery, state: FSMContext):
+    await state.set_state(Adm.donor_target)
+    await state.update_data(donor=int(cb.data[8:]))
+    await cb.message.answer(CHAT_PROMPT.replace("Endi shu yo'nalish e'lonlari tushadigan",
+                                                "Bu donor guruh mijozlari tushadigan")
+                            .replace("<code>0</code> — asosiy guruhga (DRIVERS_CHAT_ID)",
+                                     "<code>0</code> — yo'nalish bo'yicha / asosiy guruhga"), parse_mode="HTML")
+    await cb.answer()
+
+
+@router.message(StateFilter(Adm.donor_target))
+async def on_donor_target_input(msg: Message, state: FSMContext, bot: Bot):
+    res = await _parse_chat(msg, bot)
+    if isinstance(res, str):
+        await msg.answer(res + "\nBekor: /cancel")
+        return
+    cid, title = res
+    donor = (await state.get_data())["donor"]
+    if cid == donor:
+        await msg.answer("❌ Donor guruhning o'zini tanlab bo'lmaydi. Boshqasini yuboring yoki /cancel")
+        return
+    crud.set_donor_target(donor, cid, title)
+    donor_parser.reload()
+    await state.clear()
+    text, kb = donor_card(donor)
+    await msg.answer("✅ Bog'landi\n\n" + text, parse_mode="HTML", reply_markup=kb)
+
+
+# ================= 6. Umumiy xabarnoma =================
 AUDIENCE = {"all": "Hammaga", "driver": "Haydovchilarga", "passenger": "Yo'lovchilarga"}
 
 
