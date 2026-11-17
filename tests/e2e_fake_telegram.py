@@ -336,6 +336,10 @@ async def run():
     await step(msg("Nukusdan Xivaga taksi kerak +998971112233", user=U(61))); await asyncio.sleep(.2); r = new()
     check("maxfiy yo'lovchi: e'lon tugmasiz yetadi", len(rejected) == 1 and len(r) == 1 and "Nukus" in r[0][1]
           and "tg://user?id=61" not in markups[-1][1] and "take" in markups[-1][1], (rejected, r, markups[-1:]))
+    check("maxfiy yo'lovchi: «Xabarga o'tish» tugmasi va lichka yo'riqnomasi qoladi",
+          (lambda btn: "Xabarga" in btn["text"] and btn["url"].startswith("https://t.me/"))(
+              json.loads(markups[-1][1])["inline_keyboard"][-1][0]), markups[-1:])
+    check("username yo'q: lichka yo'riqnomasi", "ismiga bosing" in r[0][1], r)
     await step(msg("Xivadan Nukusga taksi kerak", user={**U(62), "username": "zzuser"})); await asyncio.sleep(.2); new()
     check("username bo'lsa t.me tugma", "https://t.me/zzuser" in markups[-1][1], markups[-1:])
     await step(msg("Urganchdan Nukusga taksi kerak", user=U(63))); await asyncio.sleep(.2); new()

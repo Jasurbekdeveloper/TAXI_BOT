@@ -46,6 +46,7 @@ class Outgoing:
     chat_id: int | None = None              # yopiq guruh (Smart Routing). None = DRIVERS_CHAT_ID
     style: str = "default"                  # "donor": «👤 Клиент личкаси» + «✅ Buyurtmani oldim» tugmalari
     undo_keys: list | None = None           # donor dublikat kalitlari: yetkazilmasa bazadan olib tashlanadi
+    source_url: str | None = None           # «🔗 Xabarga o'tish»: asl xabar (lichka yopiq bo'lsa ismiga bosib yoziladi)
 
 
 # ---------- Dedup ----------
@@ -147,6 +148,9 @@ def render(m: Incoming, frm, to, seats, when, phone) -> str:
         lines.append(f"👤 @{e(m.username)}")
     elif m.user_id and m.user_id > 0:
         lines.append(f'👤 <a href="tg://user?id={m.user_id}">{e(m.user_name or "Profil")}</a>')
+    if not m.username and (rid or (m.user_id and m.user_id > 0)) and source_link(m):
+        # username yo'q: tg://user havolasi ko'pincha bosilmaydi — asl xabardan ismiga bosib yoziladi
+        lines.append("ℹ️ <i>Lichka: «🔗 Xabarga o'tish» → ismiga bosing → «Xabar yozish»</i>")
     lines.append(f"\n💬 <i>{e(clean_text(m.text)[:400])}</i>")
     link = source_link(m)
     src = f'<a href="{link}">{e(m.chat_title)}</a>' if link else e(m.chat_title)
@@ -241,11 +245,11 @@ async def process(m: Incoming) -> str | None:
     rid = repost_user_id(m.text)                # bot qayta joylagan bo'lsa, "Yozish" asl mijozga ochilsin
     url = contact_url(None, rid) if rid else contact_url(m.username, m.user_id)
     await queue.put(Outgoing(render(m, frm, to, seats, when, p.phone), key,
-                             contact_url=url, chat_id=routes.target_chat(frm, to)))
+                             contact_url=url, chat_id=routes.target_chat(frm, to), source_url=source_link(m)))
     return label
 
 
-def taken_kb(passenger_id=None, url=None, style="default"):
+def taken_kb(passenger_id=None, url=None, style="default", source_url=None):
     data = f"take:{passenger_id}" if passenger_id else "take"
     if style == "donor":
         rows = [[InlineKeyboardButton(text="👤 Клиент личкаси", url=url)]] if url else []
@@ -254,13 +258,16 @@ def taken_kb(passenger_id=None, url=None, style="default"):
     row = [InlineKeyboardButton(text="✅ Oldim", callback_data=data)]
     if url:
         row.append(InlineKeyboardButton(text="💬 Yozish", url=url))
-    return InlineKeyboardMarkup(inline_keyboard=[row])
+    rows = [row]
+    if source_url:                                  # t.me havola tugmasi hech qachon rad etilmaydi
+        rows.append([InlineKeyboardButton(text="🔗 Xabarga o'tish", url=source_url)])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 async def _deliver(bot: Bot, item: Outgoing):
     async def send(url):
         await bot.send_message(item.chat_id or config.DRIVERS_CHAT_ID, item.text, parse_mode="HTML",
-                               reply_markup=taken_kb(item.passenger_id, url, item.style),
+                               reply_markup=taken_kb(item.passenger_id, url, item.style, item.source_url),
                                disable_web_page_preview=True)
 
     try:

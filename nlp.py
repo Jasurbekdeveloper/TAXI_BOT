@@ -100,7 +100,7 @@ CITIES = {
     "Andijon": ["andijon", "andijan"],
     "Namangan": ["namangan"],
     "Farg'ona": ["fargona", "fergana", "fargana"],
-    "Qo'qon": ["qoqon", "kokand", "koqon"],
+    "Qo'qon": ["qoqon", "kokand", "koqon", "quqon", "kukon", "qoqand"],
     "Marg'ilon": ["margilon", "margilan"],
     "Jizzax": ["jizzax", "djizak", "jizzak", "jizak"],
     "Guliston": ["guliston", "gulistan"],
@@ -113,8 +113,8 @@ CITIES = {
     "Muzrabot": ["muzrabot", "muzrabod"],
     "Sho'rchi": ["shorchi", "shurchi"],
     "Boysun": ["boysun", "baysun"],
-    "Qumqo'rg'on": ["qumqorgon", "kumkurgan"],
-    "Jarqo'rg'on": ["jarqorgon", "jarkurgan"],
+    "Qumqo'rg'on": ["qumqorgon", "kumkurgan", "qumqurgon", "kumkorgon"],
+    "Jarqo'rg'on": ["jarqorgon", "jarkurgan", "jarqurgon", "jarkorgon"],
     "Sariosiyo": ["sariosiyo", "sariasiya"],
     "Angor": ["angor"],
     "Navoiy": ["navoiy", "navoi"],
@@ -124,7 +124,7 @@ CITIES = {
     "Chirchiq": ["chirchiq", "chirchik"],
     "Angren": ["angren"],
     "Olmaliq": ["olmaliq", "almalik", "almalyk"],
-    "Kattaqo'rg'on": ["kattaqorgon", "kattakurgan"],
+    "Kattaqo'rg'on": ["kattaqorgon", "kattakurgan", "kattaqurgon"],
     "Bekobod": ["bekobod", "bekabad"],
     "Yangiyo'l": ["yangiyol", "yangiyul"],
     "Yangiyer": ["yangiyer"],
@@ -139,7 +139,7 @@ CITIES = {
     "Shahrixon": ["shahrixon", "shaxrixon", "shahrixan"],
     "Chust": ["chust"],
     "Rishton": ["rishton", "rishtan"],
-    "Qo'ng'irot": ["qongirot", "kungrad"],
+    "Qo'ng'irot": ["qongirot", "kungrad", "qungirot"],
 }
 _ALIAS = sorted(((a, c) for c, al in CITIES.items() for a in al), key=lambda x: -len(x[0]))
 CITY_NAMES = set(CITIES)        # kanonik shahar nomlari (ro'yxatga qo'shishda tekshirish uchun)

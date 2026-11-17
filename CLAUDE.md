@@ -44,6 +44,7 @@ Routerlar tartibi muhim: `admin, admin_panel, moderation, panel, driver_cabinet,
 - **Admin buyruqlari:** `/add` (guruh ichida), `/addgroup @a t.me/b -100123`, `/delgroup`, `/groups` (❌ tugma bilan), `/stats`, `/help`. `/id` hamma uchun.
 - **Admin kim:** `ADMIN_IDS` yoki haydovchilar guruhi egasi/adminlari.
 - **Tasniflash (2026-11-17):** kalit so'zlar → `pipeline.decide`. AI'ga boradi: (1) noaniq xabar, (2) «yo'lovchi» chiqqan-u haydovchi belgisi ham bor (tekshiruv). AI ishonchi ≥ `AI_MIN_CONFIDENCE` (0.6) bo'lsa qabul qilinadi, tekshiruvda boshqacha desa AI ustun (`stats.ai_overrides`). AI ishlamasa kalit so'z natijasi qoladi. `AI_API_KEY` bo'sh bo'lsa noaniq xabar tashlanadi. Log: `[label/kw|ai]`.
+- **Lichka yopiq yo'lovchi (2026-11-17):** username yo'q bo'lsa `tg://user` havolasi ko'pincha bosilmaydi va «💬 Yozish» tugmasi rad etiladi. E'lon ostida doim «🔗 Xabarga o'tish» (asl xabar, `Outgoing.source_url`) va «ℹ️ Lichka: … ismiga bosing» yo'riqnomasi. Shahar taxalluslari: quqon, qumqurgon, jarqurgon, kattaqurgon, qungirot.
 - **Donor parser (2026-11-17):** `/admin` → «🕵️‍♂️ Donor guruhlar (Parser)»: qo'shish (forward / @username / chat_id; yopiq guruh rad etiladi), ⏸/▶️, «🎯 Yopiq guruhga bog'lash», o'chirish. Jadvallar `donor_groups`, `dispatched`. `DONOR_DEDUP_MINUTES`=30. Statistika: `donor`, `donor_skipped`.
 - **Imlo xatolari (2026-11-17):** `nlp._fix_typos`: «ketamz/olamz» → «ketamiz/olamiz», «ketvomiz/ketyabmiz» → «ketyapmiz»; `DRIVER_TAKE_RE` («odam/pochta … olamiz» → +3). AI noaniq xabarni yo'lovchi deyishi uchun, kalit so'zlar haydovchi tomonga og'gan bo'lsa, ishonch ≥ 0.85 kerak.
 - **Guruh qidiruvi va admin kontakti (2026-11-17):** guruh tanlashda «🔎 Nomi bo'yicha qidirish» (`dc:search`, FSM `GroupSearch`, filtr FSM data `gq` da, `normalize` bilan kirill=lotin). Ruxsat yo'q/blok/Global Stop/API yo'q xabarlarida bog'lanish tugmasi.
@@ -72,8 +73,8 @@ Routerlar tartibi muhim: `admin, admin_panel, moderation, panel, driver_cabinet,
 ## Ishga tushirish va tekshirish
 ```bash
 .venv/Scripts/python main.py
-.venv/Scripts/python -m pytest -q tests        # 117 ta
-.venv/Scripts/python tests/e2e_fake_telegram.py # 164 ta, real Telegram'ga ulanmaydi
+.venv/Scripts/python -m pytest -q tests        # 119 ta
+.venv/Scripts/python tests/e2e_fake_telegram.py # 166 ta, real Telegram'ga ulanmaydi
 ```
 Bitta token bilan bir vaqtda faqat bitta nusxa ishlashi kerak.
 
