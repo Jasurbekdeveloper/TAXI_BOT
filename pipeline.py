@@ -96,21 +96,56 @@ def route_hashtag(frm, to) -> str:
     return f"#{a or b}" if (a or b) else ""
 
 
+# Boshqa botlar qayta joylagan e'lonlardagi xizmat qatorlari: haydovchiga foydasiz
+_JUNK_LINE_RE = re.compile(
+    r"(user\s*id|клиент\s*личка|клиентга\s*ёз|mijoz\s*lichka|mijozga\s*yoz|t\.me/|@\w+bot\b|orqali yuborildi)",
+    re.I)
+_REPOST_ID_RE = re.compile(r"user\s*id\s*[:：]?\s*(\d{5,15})", re.I)
+
+
+def clean_text(text: str) -> str:
+    keep = [ln for ln in text.splitlines() if not _JUNK_LINE_RE.search(ln)]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(keep)).strip() or text.strip()
+
+
+def repost_user_id(text: str) -> int | None:
+    """Qayta joylangan e'londa asl mijozning ID si ("🆔 User ID: 8898901836")."""
+    m = _REPOST_ID_RE.search(text or "")
+    return int(m.group(1)) if m else None
+
+
+def _repost_name(text: str) -> str | None:
+    """"👤 Akmal Choriyev" qatoridan ism (faqat ID qatoridan oldingi)."""
+    for ln in text.splitlines():
+        if _REPOST_ID_RE.search(ln):
+            break
+        mm = re.match(r"\s*👤\s*(.+)", ln)
+        if mm:
+            return mm.group(1).strip()[:40]
+    return None
+
+
 def render(m: Incoming, frm, to, seats, when, phone) -> str:
     e = html.escape
-    route = f"{e(frm or '?')} → {e(to or '?')}"
-    lines = ["🧍 <b>YO'LOVCHI</b>", f"📍 {route}"]
+    route = " → ".join(e(x) for x in (frm, to) if x) if (frm and to) else (
+        f"{e(frm)} →" if frm else f"→ {e(to)}" if to else "")
+    lines = ["🧍 <b>YO'LOVCHI</b>"]
+    if route:
+        lines.append(f"📍 {route}")
     if when:
         lines.append(f"🕕 {e(str(when))}")
     if seats:
         lines.append(f"👥 {seats} kishi")
     if phone:
         lines.append(f"📞 {e(phone)}")
-    if m.username:
+    rid = repost_user_id(m.text)
+    if rid:                                     # boshqa bot qayta joylagan: profil — asl mijozniki
+        lines.append(f'👤 <a href="tg://user?id={rid}">{e(_repost_name(m.text) or "Mijoz profili")}</a>')
+    elif m.username:
         lines.append(f"👤 @{e(m.username)}")
     elif m.user_id and m.user_id > 0:
         lines.append(f'👤 <a href="tg://user?id={m.user_id}">{e(m.user_name or "Profil")}</a>')
-    lines.append(f"\n💬 <i>{e(m.text[:400])}</i>")
+    lines.append(f"\n💬 <i>{e(clean_text(m.text)[:400])}</i>")
     link = source_link(m)
     src = f'<a href="{link}">{e(m.chat_title)}</a>' if link else e(m.chat_title)
     lines.append(f"🔗 {src}")
@@ -198,8 +233,10 @@ async def process(m: Incoming) -> str | None:
     if is_duplicate(key):
         stats["dup"] += 1
         return label
+    rid = repost_user_id(m.text)                # bot qayta joylagan bo'lsa, "Yozish" asl mijozga ochilsin
+    url = contact_url(None, rid) if rid else contact_url(m.username, m.user_id)
     await queue.put(Outgoing(render(m, frm, to, seats, when, p.phone), key,
-                             contact_url=contact_url(m.username, m.user_id), chat_id=routes.target_chat(frm, to)))
+                             contact_url=url, chat_id=routes.target_chat(frm, to)))
     return label
 
 

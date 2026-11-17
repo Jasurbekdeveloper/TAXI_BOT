@@ -177,12 +177,10 @@ async def on_phone(msg: Message, state: FSMContext):
         pass
     if res == "ok":
         await state.set_state(Auth.code)
-        await msg.answer(
-            "✉️ Telegram ilovangizdagi <b>«Telegram»</b> rasmiy chatiga 5 xonali kod keldi.\n\n"
-            "❗️ Kodni <b>bo'sh joy bilan</b> yozing, masalan: <code>1 2 3 4 5</code>\n"
-            "Kodni bo'sh joysiz yuborsangiz, Telegram uni «boshqa odamga berilgan» deb bloklaydi va "
-            "kirish bekor bo'ladi.",
-            parse_mode="HTML", reply_markup=_cancel_kb())
+        await state.update_data(code="")
+        await msg.answer("✉️ Telegram ilovangizdagi <b>«Telegram»</b> rasmiy chatiga 5 xonali kod keldi.",
+                         parse_mode="HTML", reply_markup=_cancel_kb())
+        await msg.answer(_keypad_text(""), parse_mode="HTML", reply_markup=_keypad_kb())
         return
     errors = {
         "invalid_phone": "❌ Bu raqam Telegramda topilmadi yoki noto'g'ri. Qayta yuboring.",
@@ -209,12 +207,67 @@ async def _delete_secret(msg: Message):
         pass
 
 
+# ---------- Kod kiritish: tugmali klaviatura ----------
+# Telegram kod chatga oddiy matn bo'lib yozilsa, uni «boshqa odamga berildi» deb bloklaydi.
+# Tugmalar bosilganda kod hech qayerda xabar bo'lib yuborilmaydi, shuning uchun bo'sh joy shart emas.
+def _keypad_text(code: str) -> str:
+    shown = " ".join(code) if code else "—"
+    return f"🔢 Kodni pastdagi tugmalar bilan kiriting:\n\n<b>{shown}</b>"
+
+
+def _keypad_kb() -> InlineKeyboardMarkup:
+    d = lambda x: B(text=x, callback_data=f"dc:k:{x}")
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [d("1"), d("2"), d("3")],
+        [d("4"), d("5"), d("6")],
+        [d("7"), d("8"), d("9")],
+        [B(text="⌫", callback_data="dc:k:del"), d("0"), B(text="✅ Tasdiqlash", callback_data="dc:k:ok")],
+    ])
+
+
+@router.callback_query(F.data.startswith("dc:k:"), StateFilter(Auth.code))
+async def on_keypad(cb: CallbackQuery, state: FSMContext):
+    key = cb.data[5:]
+    code = (await state.get_data()).get("code", "")
+    if key == "del":
+        code = code[:-1]
+    elif key.isdigit() and len(code) < 6:
+        code += key
+    if key == "ok" or len(code) == 5:
+        if not 5 <= len(code) <= 6:
+            await cb.answer("Kod 5 xonali bo'lishi kerak", show_alert=True)
+            return
+        await cb.answer()
+        await state.update_data(code="")
+        try:
+            await cb.message.edit_text("⏳ Tekshirilmoqda...")
+        except TelegramAPIError:
+            pass
+        res = await auth.submit_code(cb.from_user.id, code)
+        await _after_login_step(cb.message, state, res, uid=cb.from_user.id)
+        return
+    await state.update_data(code=code)
+    await cb.answer()
+    try:
+        await cb.message.edit_text(_keypad_text(code), parse_mode="HTML", reply_markup=_keypad_kb())
+    except TelegramAPIError:
+        pass
+
+
+@router.callback_query(F.data.startswith("dc:k:"))
+async def on_keypad_stale(cb: CallbackQuery):
+    await cb.answer("Bu kod oynasi eskirgan", show_alert=True)
+
+
 @router.message(StateFilter(Auth.code))
 async def on_code(msg: Message, state: FSMContext):
+    """Zaxira: kodni yozib yuborish ham ishlaydi — '12345', '1 2 3 4 5', '1-2-3-4-5'."""
     code = auth.clean_code(msg.text)
     await _delete_secret(msg)
     if not 4 <= len(code) <= 6:
-        await msg.answer("Kodni raqamlar bilan, bo'sh joy qo'yib yozing: 1 2 3 4 5")
+        await msg.answer("Kodni pastdagi tugmalar bilan kiriting yoki raqamlarni yozib yuboring.",
+                         reply_markup=None)
+        await msg.answer(_keypad_text(""), parse_mode="HTML", reply_markup=_keypad_kb())
         return
     res = await auth.submit_code(msg.from_user.id, code)
     await _after_login_step(msg, state, res)
@@ -228,8 +281,8 @@ async def on_password(msg: Message, state: FSMContext):
     await _after_login_step(msg, state, res)
 
 
-async def _after_login_step(msg: Message, state: FSMContext, res: str):
-    uid = msg.from_user.id
+async def _after_login_step(msg: Message, state: FSMContext, res: str, uid: int | None = None):
+    uid = uid or msg.from_user.id
     if res == "ok":
         await state.clear()
         crud.set_role(uid, "driver")
@@ -240,10 +293,14 @@ async def _after_login_step(msg: Message, state: FSMContext, res: str):
         await msg.answer("🔑 Akkauntda ikki bosqichli himoya (2FA) bor. Parolni yuboring.\n"
                          "Xabar o'qilgach darhol o'chiriladi.", reply_markup=_cancel_kb())
     elif res == "invalid":
-        await msg.answer("❌ Noto'g'ri. Qayta yuboring yoki «❌ Bekor qilish».")
+        if await state.get_state() == Auth.code.state:
+            await msg.answer("❌ Kod noto'g'ri. Qaytadan kiriting.")
+            await msg.answer(_keypad_text(""), parse_mode="HTML", reply_markup=_keypad_kb())
+        else:
+            await msg.answer("❌ Noto'g'ri. Qayta yuboring yoki «❌ Bekor qilish».")
     elif res == "expired":
         await state.clear()
-        await msg.answer("⌛ Kod eskirdi yoki Telegram uni blokladi (bo'sh joysiz yuborilgan bo'lishi mumkin). "
+        await msg.answer("⌛ Kod eskirdi yoki Telegram uni blokladi. "
                          "Qaytadan «🔐 Akkauntni ulash» ni bosing.")
         await show_menu(msg, uid)
     else:

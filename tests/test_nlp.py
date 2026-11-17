@@ -74,3 +74,30 @@ def test_phone(raw, want):
 def test_small_talk_skips_ai():
     assert not nlp.worth_ai("Salom hammaga", nlp.analyze("Salom hammaga"))
     assert nlp.worth_ai("Toshkent yaqinmi", nlp.analyze("Toshkent yaqinmi"))
+
+
+def test_w_instead_of_sh_driver():
+    p = nlp.analyze("TERMEZDAN TOWKENTGA 1️⃣ KIWI KERAK POWTA XAM OLAMIZ +998994699500")
+    assert p.label == "driver"
+    assert (p.frm, p.to) == ("Termiz", "Toshkent")
+
+
+def test_broadcast_bot_signature_is_driver():
+    p = nlp.analyze("Samarqanddan Toshkentga ketamiz\n@avtoxabarchi02bot orqali yuborildi")
+    assert p.label == "driver"
+
+
+def test_w_passenger_still_passenger():
+    p = nlp.analyze("Towkentdan Qarshiga 1 kiwi bor ketadigan bormi")
+    assert p.label != "driver"
+
+
+def test_driver_takes_people_and_mail():
+    p = nlp.analyze("TOSHKENTDAN TERMEZ ANGOR Muzrabod Sherabodga Qaytaman Odam Va Po'chtalar Olaman "
+                    "Tom Bagaj Bor +998996041116")
+    assert p.label == "driver"
+    assert p.frm == "Toshkent"
+
+
+def test_kiwi_seats():
+    assert nlp.analyze("Qarshiga 1kiwi bor ketadigan bormi").seats == 1

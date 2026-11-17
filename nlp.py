@@ -16,6 +16,9 @@ def normalize(text: str) -> str:
     t = text.lower()
     t = "".join(CYR2LAT.get(ch, ch) for ch in t)
     t = re.sub(r"[ʻʼ‘’`´']", "", t)          # o'/o‘/ўz -> oz (apostrofsiz solishtiramiz)
+    t = t.replace("w", "sh")                # "towkent", "kiwi", "powta": ko'pchilik sh o'rniga w yozadi
+    t = re.sub(r"\bposhta", "pochta", t)    # "powta"/"pashta" -> pochta
+    t = re.sub(r"\bpashta", "pochta", t)
     t = re.sub(r"[^\w\s+]", " ", t)
     return re.sub(r"\s+", " ", t).strip()
 
@@ -240,12 +243,28 @@ def worth_ai(raw: str, p: Parsed) -> bool:
 FREE_SEATS_RE = re.compile(r"\b([1-7]|bir|ikki|uch|tort|besh|olti)\s*(?:ta\s*)?(?:joy|orin|mesta|mesto)\b(?!\s*(?:bormi|kerak))")
 
 
+DRIVER_TAKES_RE = re.compile(
+    r"\b(?:odam|kishi|yolovchi|yolavchi|pochta|posilka|yuk)\w*"
+    r"(?:\s+(?:va|ham|xam|hamda)\s+|\s*,\s*|\s+)(?:\w+\s+){0,2}(?:olaman|olamiz|olib ketaman|olib ketamiz)\b"
+)
+DRIVER_EXTRA_RE = re.compile(r"\b(?:qaytaman|qaytamiz|qaytyapman|qaytyapmiz|tom bagaj|bagaj bor|bagajnik bor|"
+                             r"bagaji bor|krisha bagaj|propan|metan)\b")
+# "@avtoxabarchi02bot orqali yuborildi" — haydovchilarning avtomatik e'lon tarqatish botlari imzosi
+BROADCAST_BOT_RE = re.compile(r"\b\w*bot (?:orqali|cherez) (?:yuborildi|jonatildi|otpravleno)")
+
+
 def analyze(raw: str) -> Parsed:
     t = normalize(raw)
     positive = NEGATED_RE.sub(" ", t)       # "taksi kerak emas" so'rov emas
     p, d = _score(positive, PASSENGER_KW), _score(positive, DRIVER_KW)
     if FREE_SEATS_RE.search(positive):
         d += 2
+    if DRIVER_TAKES_RE.search(positive):    # "odam va pochtalar olaman", "yolovchi, pochta olamiz"
+        d += 3
+    if DRIVER_EXTRA_RE.search(positive):     # "qaytaman", "tom bagaj bor" — haydovchi mashinasi haqida
+        d += 2
+    if BROADCAST_BOT_RE.search(t):          # avto-tarqatuvchi botlar orqali faqat haydovchilar e'lon beradi
+        d += 3
     if p >= 2 and p >= d + 2:
         label, conf = "passenger", True
     elif d >= 2 and (d >= p + 2 or (d >= 3 and d > p)):
