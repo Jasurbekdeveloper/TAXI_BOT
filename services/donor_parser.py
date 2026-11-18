@@ -232,18 +232,20 @@ async def _resolve_username(event, user_id):
             return ent.username
     except Exception:
         pass
-    # 2) «min-user»: mijoz shu xabarda ishora qilingan — xabarni kontekst qilib aniqlaymiz
+    # 2) «min-user»: mijoz shu xabarda ishora (mention) qilingan — xabarni kontekst qilib aniqlaymiz
     try:
-        from telethon.tl.types import InputPeerUserFromMessage
+        from telethon.tl.functions.users import GetUsersRequest
+        from telethon.tl.types import InputUserFromMessage
         msg = getattr(event, "message", None)
         msg_id = getattr(msg, "id", None) or getattr(event, "id", None)
         if msg_id:
             peer = await client.get_input_entity(event.chat_id)
-            ref = InputPeerUserFromMessage(peer=peer, msg_id=msg_id, user_id=user_id)
-            ent = await client.get_entity(ref)
-            return getattr(ent, "username", None)
+            ref = InputUserFromMessage(peer=peer, msg_id=msg_id, user_id=user_id)
+            res = await client(GetUsersRequest([ref]))
+            if res:
+                return getattr(res[0], "username", None)
     except Exception as e:
-        log.info("[donor] username aniqlanmadi (uid=%s): %s", user_id, str(e)[:80])
+        log.info("[donor] username aniqlanmadi (uid=%s): %s", user_id, str(e)[:90])
     return None
 
 
@@ -291,9 +293,12 @@ async def handle(event, exclude_sender_ids=()) -> str:
         un = await _resolve_username(event, order.user_id)
         if un:
             order.username = un
-    # Diagnostika: donor qanday kontakt havolasi berganini ko'rsatadi (link chiqmasa sababini bilish uchun)
-    log.info("[donor] kontakt | uid=%s un=%s btn=%s link=%s urls=%s",
-             order.user_id, order.username, order.btn_url, order.link, order.urls[:4])
+    # Diagnostika: donor qanday kontakt havolasi berganini ko'rsatadi (link chiqmasa sababini bilish uchun).
+    # mention=True — mijoz xabarda haqiqiy ishora (MentionName) bilan; min-user aniqlash shunda mumkin.
+    ents = getattr(message, "entities", None) or []
+    mention = any(getattr(e, "user_id", None) for e in ents)
+    log.info("[donor] kontakt | uid=%s un=%s mention=%s btn=%s link=%s urls=%s",
+             order.user_id, order.username, mention, order.btn_url, order.link, order.urls[:4])
     if not order.text or not (order.link or order.phone):
         stats["donor_skipped"] += 1
         return "no_contact"
