@@ -167,6 +167,7 @@ class Manager:
         if getattr(sender, "bot", False):
             return
         chat = await event.get_chat()
+        from nlp import fmt_phone
         from pipeline import Incoming, process
         first = getattr(sender, "first_name", "") or ""
         last = getattr(sender, "last_name", "") or ""
@@ -175,6 +176,7 @@ class Manager:
             chat_username=getattr(chat, "username", None), msg_id=event.id,
             user_name=f"{first} {last}".strip() or None,
             username=getattr(sender, "username", None), user_id=event.sender_id,
+            phone=fmt_phone(getattr(sender, "phone", None)),        # profil raqami ochiq bo'lsa qo'shiladi
         ))
 
     # ---------- guruhlar ----------

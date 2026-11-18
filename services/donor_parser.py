@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 
 import routes
 from database import crud
-from nlp import analyze, find_phone
+from nlp import analyze, find_phone, fmt_phone
 
 log = logging.getLogger(__name__)
 
@@ -163,8 +163,9 @@ def extract(message, chat_id: int, sender=None) -> DonorOrder:
         username = getattr(sender, "username", None)
 
     p = analyze(raw)
+    phone = find_phone(raw) or fmt_phone(getattr(sender, "phone", None))     # matnda yo'q bo'lsa profil raqami
     return DonorOrder(chat_id=chat_id, msg_id=getattr(message, "id", 0), text=clean_text(raw), raw=raw,
-                      user_id=user_id, username=username, phone=find_phone(raw), urls=urls, frm=p.frm, to=p.to)
+                      user_id=user_id, username=username, phone=phone, urls=urls, frm=p.frm, to=p.to)
 
 
 # ---------- donor ro'yxati (kesh) ----------

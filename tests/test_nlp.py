@@ -6,6 +6,15 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import nlp
 
+
+def test_fmt_phone():
+    assert nlp.fmt_phone("998901234567") == "+998 90 123 45 67"       # profil raqami (plyussiz)
+    assert nlp.fmt_phone("+998 90 123 45 67") == "+998 90 123 45 67"
+    assert nlp.fmt_phone("901234567") == "+998 90 123 45 67"          # 9 xonali -> 998 qo'shiladi
+    assert nlp.fmt_phone(None) is None
+    assert nlp.fmt_phone("12345") is None                              # noto'g'ri
+    assert nlp.fmt_phone("79161234567") is None                        # O'zbek raqami emas
+
 CASES = [
     # matn, label, frm, to, seats, when
     ("Toshkentdan Samarqandga taksi kerak 2 kishi +998901234567", "passenger", "Toshkent", "Samarqand", 2, None),

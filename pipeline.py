@@ -33,6 +33,7 @@ class Incoming:
     user_name: str | None
     username: str | None
     user_id: int | None
+    phone: str | None = None            # muallif profilidagi ochiq raqam (userbot ko'rsa); matnda bo'lmasa ishlatiladi
 
 
 @dataclass
@@ -238,13 +239,14 @@ async def process(m: Incoming) -> str | None:
         return label
     if m.chat_id in routes.closed_chat_ids():   # yopiq guruhning o'zidan kelgan xabar qaytib tushmasin
         return label
-    key = _dup_key(p.phone, frm, to, seats, when, m.text, m.user_id)
+    phone = p.phone or m.phone          # matnda raqam bo'lmasa, muallif profilidagi ochiq raqam
+    key = _dup_key(phone, frm, to, seats, when, m.text, m.user_id)
     if is_duplicate(key):
         stats["dup"] += 1
         return label
     rid = repost_user_id(m.text)                # bot qayta joylagan bo'lsa, "Yozish" asl mijozga ochilsin
     url = contact_url(None, rid) if rid else contact_url(m.username, m.user_id)
-    await queue.put(Outgoing(render(m, frm, to, seats, when, p.phone), key,
+    await queue.put(Outgoing(render(m, frm, to, seats, when, phone), key,
                              contact_url=url, chat_id=routes.target_chat(frm, to), source_url=source_link(m)))
     return label
 

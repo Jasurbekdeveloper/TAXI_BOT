@@ -64,6 +64,18 @@ def test_plain_user_sender_and_bot_sender():
     assert extract(msg("Andijonga taksi kerak"), -1, sender=chan).user_id is None
 
 
+def test_profile_phone_fallback():
+    from services.donor_parser import extract
+    # matnda raqam yo'q, lekin muallif profilida raqami ochiq -> profil raqami ko'rsatiladi
+    pub = NS(id=555, username=None, first_name="Ali", bot=False, phone="998901234567")
+    assert extract(msg("Toshkentga odam bor, ketadi"), -1, sender=pub).phone == "+998 90 123 45 67"
+    # matnda raqam bo'lsa — matndagisi ustun
+    assert extract(msg("Toshkentga odam bor +998937778899"), -1, sender=pub).phone == "+998 93 777 88 99"
+    # profil raqami yashirin (None) — qo'shilmaydi
+    hidden = NS(id=556, username=None, first_name="Vali", bot=False, phone=None)
+    assert extract(msg("Toshkentga odam bor, ketadi"), -1, sender=hidden).phone is None
+
+
 def test_channel_link_not_taken_as_client():
     from services.donor_parser import extract
     o = extract(msg("Toshkentga taksi kerak", buttons=[[{"text": "Kanalimiz", "url": "https://t.me/zakaz_kanal"}],

@@ -24,6 +24,7 @@ import store
 from database import crud
 from handlers import admin_panel, driver_cabinet
 from handlers.middlewares import TrackUsers
+from nlp import fmt_phone
 from pipeline import Incoming, process, sender
 from services import donor_parser
 from services.broadcaster import manager
@@ -158,6 +159,7 @@ async def run_userbot():
             chat_username=getattr(chat, "username", None), msg_id=event.id,
             user_name=f"{first} {last}".strip() or None,
             username=getattr(sender_, "username", None), user_id=None if broadcast else event.sender_id,
+            phone=None if broadcast else fmt_phone(getattr(sender_, "phone", None)),   # profil raqami ochiq bo'lsa
         ))
 
     try:

@@ -224,13 +224,22 @@ WORD_TIME_RE = re.compile(
 )
 
 
+def fmt_phone(raw) -> str | None:
+    """Raqamli satrni "+998 XX XXX XX XX" ga keltiradi. O'zbek raqami bo'lmasa None.
+    Profil raqami (Telethon sender.phone, masalan "998901234567") uchun ham ishlatiladi."""
+    d = re.sub(r"\D", "", str(raw or ""))
+    if len(d) == 9:
+        d = "998" + d
+    if len(d) == 12 and d.startswith("998"):
+        return f"+{d[:3]} {d[3:5]} {d[5:8]} {d[8:10]} {d[10:]}"
+    return None
+
+
 def find_phone(raw: str):
     for m in PHONE_RE.finditer(raw):
-        d = re.sub(r"\D", "", m.group())
-        if len(d) == 9:
-            d = "998" + d
-        if len(d) == 12 and d.startswith("998"):
-            return f"+{d[:3]} {d[3:5]} {d[5:8]} {d[8:10]} {d[10:]}"
+        got = fmt_phone(m.group())
+        if got:
+            return got
     return None
 
 
