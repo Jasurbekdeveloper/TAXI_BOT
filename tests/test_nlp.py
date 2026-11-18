@@ -7,6 +7,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import nlp
 
 
+def test_driver_kishi_kerak_and_typos():
+    # "N kishi kerak" = haydovchi yo'lovchi qidiryapti (maxfiy guruhga tushmasligi kerak), imlo xatolari bilan
+    assert nlp.analyze("Oltinsoy dinov shurchdan toshkinga kitamz 1 kishi kirak 959827797").label == "driver"
+    assert nlp.analyze("Denovdan Toshkentga 3 kishi kerak").label == "driver"
+    # "taksi kerak" esa yo'lovchi (imlo bilan ham)
+    assert nlp.analyze("taksi kirak Toshkentga").label == "passenger"
+    # imlo normalizatsiyasi
+    assert "kerak" in nlp.normalize("1 kishi kirak")
+    assert "ketamiz" in nlp.normalize("toshkinga kitamz")
+
+
 def test_fmt_phone():
     assert nlp.fmt_phone("998901234567") == "+998 90 123 45 67"       # profil raqami (plyussiz)
     assert nlp.fmt_phone("+998 90 123 45 67") == "+998 90 123 45 67"

@@ -30,6 +30,8 @@ _TYPO_RE = [
     (re.compile(r"\b(\w+?)pmz\b"), r"\1pmiz"),                             # ketyapmz -> ketyapmiz
     (re.compile(r"\bket(?:vo|vot|vom|op|ob|yab|yob|yopt?)(miz|man|mz)\b"), r"ketyap\1"),   # ketvomiz -> ketyapmiz
     (re.compile(r"\bket(?:vo|vot|vom|op|ob|yab|yob)(m)\b"), r"ketyapman"),
+    (re.compile(r"\bkir[ae]k\b"), "kerak"),                               # kirak, kirek -> kerak
+    (re.compile(r"\bkita(man|miz|di|sh|siz|yapman|yapmiz|yabmiz)\b"), r"keta\1"),   # kitaman -> ketaman
 ]
 
 
@@ -94,7 +96,7 @@ def _score(text: str, kw: dict) -> int:
 
 # ---------- Shaharlar ----------
 CITIES = {
-    "Toshkent": ["toshkent", "tashkent", "toshken", "tash", "tosh"],
+    "Toshkent": ["toshkent", "tashkent", "toshken", "toshkin", "tash", "tosh"],
     "Samarqand": ["samarqand", "samarkand", "samarqan", "smq", "sam"],
     "Buxoro": ["buxoro", "buxara", "buxar", "buhara", "buhar", "bukhara", "bukhar"],
     "Andijon": ["andijon", "andijan"],
@@ -107,11 +109,12 @@ CITIES = {
     "Qarshi": ["qarshi", "karshi"],
     "Shahrisabz": ["shahrisabz", "shaxrisabz"],
     "Termiz": ["termiz", "termez"],
-    "Denov": ["denov", "denau"],
+    "Denov": ["denov", "denau", "dinov"],
+    "Oltinsoy": ["oltinsoy", "altinsay", "oltinsoyi"],
     "Surxondaryo": ["surxondaryo", "surxandaryo", "surxandarya", "surxon", "surxan"],
     "Sherobod": ["sherobod", "sherabad", "sherabot", "sherobot"],
     "Muzrabot": ["muzrabot", "muzrabod"],
-    "Sho'rchi": ["shorchi", "shurchi"],
+    "Sho'rchi": ["shorchi", "shurchi", "shurch", "shorch"],
     "Boysun": ["boysun", "baysun"],
     "Qumqo'rg'on": ["qumqorgon", "kumkurgan", "qumqurgon", "kumkorgon"],
     "Jarqo'rg'on": ["jarqorgon", "jarkurgan", "jarqurgon", "jarkorgon"],
