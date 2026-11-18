@@ -273,7 +273,10 @@ _SPAM_RE = re.compile(
     # Azo/obunachi/odam sotish, aksiya reklamalari (taksi guruhlariga tashlanadigan spam)
     r"jonli\s*odam|odam\s*qo\W?sh|a\W?zo\s*qo\W?sh|obunachi|a\W?zo\s*sot|"
     r"follower|subscriber|mega\s*aksiya|aksiya\s*\d*\s*kun|ulg\w*\s*qoling|"
-    r"tekin\s*qo\W?sh", re.I)
+    r"tekin\s*qo\W?sh|"
+    # Mahsulot reklamalari (jalyuzi, mebel, ishlab chiqaruvchi, fabrika narxi...)
+    r"жалюзи|jalyuzi|jalüzi|ишлаб\s*чиқарув|ishlab\s*chiqaruv|"
+    r"фабрика\s*нарх|fabrika\s*narx|чегирма\s*билан|chegirma\s*bilan", re.I)
 
 
 def tidy(text: str, drop_phones: bool = True) -> str:

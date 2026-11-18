@@ -160,6 +160,15 @@ def test_handle_resolves_username_via_userbot(env):
     assert item.contact_url == "https://t.me/topildi_user" and "@topildi_user" in item.text
 
 
+def test_handle_skips_non_taxi(env):
+    # reklama (jalyuzi) -> spam; shahar/yo'nalishsiz begona xabar -> noroute. Ikkalasi ham uzatilmaydi
+    assert asyncio.run(env.dp.handle(
+        event("🔲 JALYUZI ishlab chiqaruvchidan fabrika narxida +998997640057", 40))) == "spam"
+    assert asyncio.run(env.dp.handle(
+        event("Assalomu alaykum hammaga, qalay ahvollar +998901112233", 41))) == "noroute"
+    assert env.q.empty()
+
+
 def test_donor_target_and_disable(env):
     from services.donor_parser import reload
     env.crud.set_donor_target(-100500, -100777, "Yopiq B")

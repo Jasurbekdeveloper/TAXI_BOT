@@ -258,9 +258,13 @@ async def handle(event, exclude_sender_ids=()) -> str:
         stats["donor_skipped"] += 1
         log.info("[donor] haydovchi e'loni o'tkazildi (%s) | %s", src, raw[:60].replace("\n", " "))
         return "driver"
+    if label != "passenger" and not (p.frm or p.to):     # taksi e'loni emas (reklama/boshqa): shahar/yo'nalish yo'q
+        stats["donor_skipped"] += 1
+        log.info("[donor] taksi e'loni emas, o'tkazildi | %s", raw[:60].replace("\n", " "))
+        return "noroute"
 
     order = extract(message, chat_id, sender)
-    if order.user_id and not order.username and not order.btn_url:   # uid bor, havola yo'q: username'ni aniqlab ko'ramiz
+    if order.user_id and not order.username:             # username bo'lmasa — userbot orqali aniqlab ko'ramiz (link chiqsin)
         un = await _resolve_username(event, order.user_id)
         if un:
             order.username = un

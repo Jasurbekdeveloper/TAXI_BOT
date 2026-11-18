@@ -41,6 +41,7 @@ def test_is_spam():
     # azo/odam/aksiya sotish reklamasi (taksi guruhiga tashlangan)
     assert nlp.is_spam("Mega aksiya💐 Jonli odam qo'shamiz arzon narxda 1000 tasi 25 ming")
     assert nlp.is_spam("Obunachi qo'shamiz tekin, AKSIYA 1 KUN BO'LADI ulgurib qoling")
+    assert nlp.is_spam("🔲 ЖАЛЮЗИ Ишлаб Чиқарувчидан Фабрика Нархида +998997640057")   # mahsulot reklamasi
     assert not nlp.is_spam("Denovdan Toshkentga taksi kerak 2 kishi")
     assert not nlp.is_spam("Toshkentga odam bor")
     assert not nlp.is_spam("Toshkentga 3 odam olamiz joy bor")    # haydovchi e'loni — spam emas
