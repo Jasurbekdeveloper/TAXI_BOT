@@ -22,7 +22,7 @@ from nlp import analyze, find_phone, fmt_phone, is_spam, tidy
 
 log = logging.getLogger(__name__)
 
-TG_USER_RE = re.compile(r"tg://user\?id=(\d+)", re.I)
+TG_USER_RE = re.compile(r"tg://(?:user\?id|openmessage\?user_id)=(\d+)", re.I)
 TEXT_ID_RE = re.compile(r"(?:user\s*_?id|юзер\s*id|айди|\bid)\s*[:：#=]?\s*(\d{5,})", re.I)
 TME_RE = re.compile(r"(?:https?://)?(?:t\.me|telegram\.me)/([A-Za-z][A-Za-z0-9_]{3,31})(?:[/?#].*)?$", re.I)
 # tg://resolve?domain=username  (lichka tugmasi ko'pincha shu ko'rinishda bo'ladi)
@@ -275,6 +275,9 @@ async def handle(event, exclude_sender_ids=()) -> str:
         un = await _resolve_username(event, order.user_id)
         if un:
             order.username = un
+    # Diagnostika: donor qanday kontakt havolasi berganini ko'rsatadi (link chiqmasa sababini bilish uchun)
+    log.info("[donor] kontakt | uid=%s un=%s btn=%s link=%s urls=%s",
+             order.user_id, order.username, order.btn_url, order.link, order.urls[:4])
     if not order.text or not (order.link or order.phone):
         stats["donor_skipped"] += 1
         return "no_contact"
