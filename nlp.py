@@ -246,6 +246,12 @@ def find_phone(raw: str):
     return None
 
 
+def tel(phone) -> str:
+    """Bosib qo'ng'iroq qilish uchun bo'shliqsiz raqam: "+998 90 123 45 67" -> "+998901234567"
+    (Telegram bo'shliqsiz raqamni bosiladigan qiladi)."""
+    return re.sub(r"[^\d+]", "", str(phone or ""))
+
+
 # ---------- E'lon matnini tozalash ("o'z formatimizga" keltirish) ----------
 _URL_RE = re.compile(r"(?:https?://|tg://|www\.)\S+|\b(?:t\.me|telegram\.me)/\S+", re.I)
 _MENTION_RE = re.compile(r"@[A-Za-z]\w{2,31}")
@@ -263,7 +269,11 @@ _EMOJI_WALL_RE = re.compile(
 # Spam/soxta: butun xabar reklama/bot taklifi/soxta bo'lganda (appended reklama qatori tidy() da tozalanadi)
 _SPAM_RE = re.compile(
     r"feyk\s*xabar|\bfake\b|ustiga bosing|yangi xabar matnini|"
-    r"bot(?:imiz)?ga?\s*(?:kir|bos|yoz)|reklama qil", re.I)
+    r"bot(?:imiz)?ga?\s*(?:kir|bos|yoz)|reklama qil|"
+    # Azo/obunachi/odam sotish, aksiya reklamalari (taksi guruhlariga tashlanadigan spam)
+    r"jonli\s*odam|odam\s*qo\W?sh|a\W?zo\s*qo\W?sh|obunachi|a\W?zo\s*sot|"
+    r"follower|subscriber|mega\s*aksiya|aksiya\s*\d*\s*kun|ulg\w*\s*qoling|"
+    r"tekin\s*qo\W?sh", re.I)
 
 
 def tidy(text: str, drop_phones: bool = True) -> str:

@@ -15,7 +15,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 import ai
 import config
 import routes
-from nlp import analyze, canon_city, is_spam, normalize, tidy, worth_ai
+from nlp import analyze, canon_city, is_spam, normalize, tel, tidy, worth_ai
 from services import learn
 
 log = logging.getLogger(__name__)
@@ -147,7 +147,7 @@ def render(m: Incoming, frm, to, seats, when, phone) -> str:
     if seats:
         lines.append(f"👥 {seats} kishi")
     if phone:
-        lines.append(f"📞 {e(phone)}")
+        lines.append(f"📞 {e(tel(phone))}")     # bo'shliqsiz — bosib qo'ng'iroq qilish uchun
     if rid:                                     # boshqa bot qayta joylagan: profil — asl mijozniki
         lines.append(f'👤 <a href="tg://user?id={rid}">{e(_repost_name(m.text) or "Mijoz profili")}</a>')
     elif m.username:
@@ -173,7 +173,7 @@ def render_order(user_id, username, full_name, d: dict) -> str:
     lines = ["🚕 <b>YANGI BUYURTMA</b>", f"📍 {e(d['frm'])} → {e(d['to'])}", f"🕕 {e(d['when'])}"]
     if d.get("seats"):
         lines.append(f"👥 {d['seats']} kishi")
-    lines.append(f"📞 {e(d['phone'])}")
+    lines.append(f"📞 {e(tel(d['phone']))}")
     if username:
         lines.append(f"👤 @{e(username)}")
     else:

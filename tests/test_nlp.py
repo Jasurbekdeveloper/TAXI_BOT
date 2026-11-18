@@ -38,8 +38,17 @@ def test_is_spam():
     assert nlp.is_spam("Sizga taksi keràkmi unda bot ustiga bosing")
     assert nlp.is_spam("Yangi xabar matnini kiriting")
     assert nlp.is_spam("🔥🔥🔥")                                  # mazmunli harf yo'q
+    # azo/odam/aksiya sotish reklamasi (taksi guruhiga tashlangan)
+    assert nlp.is_spam("Mega aksiya💐 Jonli odam qo'shamiz arzon narxda 1000 tasi 25 ming")
+    assert nlp.is_spam("Obunachi qo'shamiz tekin, AKSIYA 1 KUN BO'LADI ulgurib qoling")
     assert not nlp.is_spam("Denovdan Toshkentga taksi kerak 2 kishi")
     assert not nlp.is_spam("Toshkentga odam bor")
+    assert not nlp.is_spam("Toshkentga 3 odam olamiz joy bor")    # haydovchi e'loni — spam emas
+
+
+def test_tel_compact():
+    assert nlp.tel("+998 90 123 45 67") == "+998901234567"        # bosib qo'ng'iroq uchun bo'shliqsiz
+    assert nlp.tel(None) == ""
 
 
 def test_fmt_phone():

@@ -327,7 +327,7 @@ async def run():
     print("    group <-", repr(r[0][1]) if r else r, flush=True)
     orders = [x for x in r if "YANGI BUYURTMA" in x[1]]
     check("ikki bosishda bitta buyurtma guruhga", len(orders) == 1 and orders[0][0] in ("-1009999", -1009999), r)
-    check("buyurtmada hamma ma'lumot", orders and all(k in orders[0][1] for k in ("Toshkent", "ertaga 18:30", "+998 95 123 45 67", "tg://user?id=31")), r)
+    check("buyurtmada hamma ma'lumot", orders and all(k in orders[0][1] for k in ("Toshkent", "ertaga 18:30", "+998951234567", "tg://user?id=31")), r)
     check("yo'lovchiga tasdiq", any("yuborildi" in e[1] for e in edits), edits)
 
     # ---------- 1-band: Yozish tugmasi ----------

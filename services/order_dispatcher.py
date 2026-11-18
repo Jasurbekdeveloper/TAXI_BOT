@@ -12,6 +12,7 @@ import logging
 import config
 import routes
 from database import crud
+from nlp import tel
 from services.donor_parser import DonorOrder
 
 log = logging.getLogger(__name__)
@@ -23,7 +24,8 @@ def render(o: DonorOrder) -> str:
              f"🆔 <b>User ID:</b> <code>{o.user_id}</code>" if o.user_id else "🆔 <b>User ID:</b> —"]
     if o.frm or o.to:
         lines.append(f"📍 {e(o.frm or '?')} → {e(o.to or '?')}")
-    lines += ["", f"📝 <b>Xabar:</b> {e(o.text)}", f"📞 <b>Tel:</b> {e(o.phone) if o.phone else 'koʻrsatilmagan'}"]
+    lines += ["", f"📝 <b>Xabar:</b> {e(o.text)}",
+              f"📞 <b>Tel:</b> {e(tel(o.phone)) if o.phone else 'koʻrsatilmagan'}"]   # bo'shliqsiz — bosib qo'ng'iroq
     if o.link:
         link = e(o.link, quote=True)
         lines += ["", f'👤 <a href="{link}">Клиент личкаси</a>', f'✍️ <a href="{link}">Клиентга ёзиш</a>']
@@ -32,8 +34,7 @@ def render(o: DonorOrder) -> str:
         elif not o.phone:
             # username/telefon yo'q: tg://user havolasi begona uchun ochilmasligi mumkin — ID bilan ogohlantiramiz
             lines.append("ℹ️ <i>Havola ochilmasa — User ID orqali toping</i>")
-    if o.source_title:
-        lines.append(f"📡 <i>Manba: {e(o.source_title)}</i>")
+    # Manba uchun «🔗 Xabarga o'tish» tugmasi (source_url) yetarli — xunuk chat_id qatori qo'shilmaydi
     from pipeline import route_hashtag
     tag = route_hashtag(o.frm, o.to)
     if tag:
@@ -62,7 +63,6 @@ async def dispatch(o: DonorOrder, donor=None) -> str:
     crud.mark_dispatched(keys)
     if donor is not None:
         crud.donor_forwarded(o.chat_id)
-        o.source_title = donor["title"] or str(o.chat_id)    # qaysi guruhdan olingani
     stats["donor"] += 1
     log.info("[donor] %s → %s | uid=%s un=%s tel=%s", o.chat_id, target, o.user_id, o.username, o.phone)
     await queue.put(Outgoing(render(o), key="donor:" + (keys[0] if keys else str(o.msg_id)),
