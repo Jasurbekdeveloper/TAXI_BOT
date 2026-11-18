@@ -119,19 +119,38 @@ def parse_json(content: str):
 
 # ---------- so'rov ----------
 async def _chat(messages: list[dict]) -> str | None:
+    """Har bir backendni (model/provayder) ketma-ket sinaydi: 429/xato bersa keyingisiga o'tadi.
+    Hammasi limitda bo'lsa, biroz kutib bir marta qayta uradi."""
+    backends = config.ai_backends()
+    if not backends:
+        return None
+    last_exc = None
     async with _limit, httpx.AsyncClient(timeout=20) as c:
         for attempt in (1, 2):
-            r = await c.post(
-                f"{config.AI_BASE_URL}/chat/completions",
-                headers={"Authorization": f"Bearer {config.AI_API_KEY}"},
-                json={"model": config.AI_MODEL, "temperature": 0, "response_format": {"type": "json_object"},
-                      "messages": messages},
-            )
-            if r.status_code == 429 and attempt == 1:       # bepul limit: bir marta kutib qayta
-                await asyncio.sleep(min(float(r.headers.get("retry-after", 2) or 2), 10))
+            rate_limited = False
+            for base, key, model in backends:
+                try:
+                    r = await c.post(
+                        f"{base}/chat/completions",
+                        headers={"Authorization": f"Bearer {key}"},
+                        json={"model": model, "temperature": 0, "response_format": {"type": "json_object"},
+                              "messages": messages},
+                    )
+                    if r.status_code == 429:
+                        rate_limited = True
+                    r.raise_for_status()
+                    return r.json()["choices"][0]["message"]["content"]
+                except Exception as e:                      # 429/5xx/tarmoq/noto'g'ri kalit — keyingi backend
+                    last_exc = e
+                    if len(backends) > 1:
+                        log.info("AI backend o'tkazildi (%s): %s", model, str(e)[:120])
+                    continue
+            if attempt == 1 and rate_limited:               # hamma backend limitda: biroz kutib bir marta qayta
+                await asyncio.sleep(2)
                 continue
-            r.raise_for_status()
-            return r.json()["choices"][0]["message"]["content"]
+            break
+    if last_exc:
+        raise last_exc
     return None
 
 

@@ -17,6 +17,7 @@ Taksi guruhlaridagi yo'lovchi xabarlarini aniqlab, haydovchilar guruhiga e'lon q
 | `services/crypto.py` | Fernet: `SESSION_SECRET` yoki avtomatik `fernet.key` |
 | `services/userbot_auth.py` | Haydovchi akkauntini bot ichida ulash: telefon → kod (`1 2 3 4 5`) → 2FA → StringSession shifrlanib saqlanadi |
 | `services/ad_format.py` | Haydovchi e'lonini ajratadi (marshrut, oraliq shaharlar, vaqt, joy, mashina, narx, telefonlar, pochta/ayol/oldi bo'sh) va bir xil formatga keltiradi; AI bo'sh maydonlarni to'ldiradi |
+| `services/learn.py` | O'rganilgan belgilar (`learned.json`): ishonchli (kalit so'z/AI) natijadan emoji+so'z markerlarini sanaydi; `guess()` yetarli haydovchi markeri bo'lsa AI'siz "driver" deydi (429 ni tejaydi). O'z natijasidan o'rganmaydi |
 | `services/donor_parser.py` | Donor guruhlar parseri: texnik userbot (`main.run_userbot`) yoki a'zo haydovchi akkaunti (`broadcaster.on_message`) donor xabarini beradi. text_link / mention / inline tugma (url, user_profile) dan `tg://user?id`, «User ID: 123», «Mijoz: @user», lichka tugmasidagi t.me/username, oddiy yuboruvchi. Matn reklama/link/@/hashtag dan tozalanadi. Haydovchi e'loni (`pipeline.decide`) o'tkaziladi |
 | `services/order_dispatcher.py` | «🚖 Yangi mijoz aniqlandi!» HTML shabloni, `👤 Клиент личкаси` + `✅ Buyurtmani oldim` (`take`) tugmalari, `dispatched` jadvalida 30 daq dedup (uid/username/telefon), yetkazilmasa dedup bo'shatiladi. Target: donor `target_chat_id` yoki Smart Routing |
 | `services/broadcaster.py` | `manager`: ko'p sessiya. Har akkaunt tanlangan guruhlarini O'QIYDI (→ pipeline) va TARQATADI (fon vazifa, interval, anti-spam, FloodWait/forbidden/revoked) |
@@ -30,7 +31,7 @@ Taksi guruhlaridagi yo'lovchi xabarlarini aniqlab, haydovchilar guruhiga e'lon q
 | `relay.py` | Haydovchi va yo'lovchi bot orqali yozishuvi |
 | `pipeline.py` | Tahlil, AI, dedup, navbat, `render`, `_deliver` (tugma rad etilsa tugmasiz yuboradi) |
 | `nlp.py` | Kalit so'zlar (`PASSENGER_KW`, `DRIVER_KW`), `CITIES`, marshrut, vaqt, telefon |
-| `ai.py` | OpenAI-mos API (Groq). `classify()`: yangi prompt + 5 misol, `confidence`, 1 soatlik kesh, 429 da qayta urinish, mustahkam JSON. `extract_ad()`: haydovchi e'loni maydonlari |
+| `ai.py` | OpenAI-mos API (Groq). `classify()`: yangi prompt + 5 misol, `confidence`, 1 soatlik kesh, mustahkam JSON. `_chat` **backendlarni ketma-ket sinaydi** (`config.ai_backends`): biri 429/xato bersa keyingi model/provayderga o'tadi, hammasi limitda bo'lsa biroz kutib bir marta qayta. `extract_ad()`: haydovchi e'loni maydonlari |
 | `store.py` | `groups.json` (kuzatiladigan guruhlar) |
 | `config.py` | `.env`, `validate()` |
 | `tests/` | `test_nlp.py`, `test_store.py`, `e2e_fake_telegram.py` (soxta Telegram+AI server) |
@@ -43,7 +44,9 @@ Routerlar tartibi muhim: `admin, admin_panel, moderation, panel, driver_cabinet,
 - **Tugmali panel (2026-11-16):** `/menu` (admin, shaxsiy chat). Tugmalar: «➕ Guruhga/Kanalga qo'shish» (Telegram deep-link `?startgroup`/`?startchannel`), «🔗 Havola/forward bilan qo'shish» (FSM: @username, t.me, ID yoki forward), «📋 Ro'yxat» (❌ tugmalar), «👤 Userbot holati». Slash buyruqlar zaxira. `add_watch()` — `/addgroup` va panel uchun umumiy.
 - **Admin buyruqlari:** `/add` (guruh ichida), `/addgroup @a t.me/b -100123`, `/delgroup`, `/groups` (❌ tugma bilan), `/stats`, `/help`. `/id` hamma uchun.
 - **Admin kim:** `ADMIN_IDS` yoki haydovchilar guruhi egasi/adminlari.
-- **Tasniflash (2026-11-17):** kalit so'zlar → `pipeline.decide`. AI'ga boradi: (1) noaniq xabar, (2) «yo'lovchi» chiqqan-u haydovchi belgisi ham bor (tekshiruv). AI ishonchi ≥ `AI_MIN_CONFIDENCE` (0.6) bo'lsa qabul qilinadi, tekshiruvda boshqacha desa AI ustun (`stats.ai_overrides`). AI ishlamasa kalit so'z natijasi qoladi. `AI_API_KEY` bo'sh bo'lsa noaniq xabar tashlanadi. Log: `[label/kw|ai]`.
+- **Tasniflash (2026-11-17):** kalit so'zlar → `pipeline.decide`. AI'ga boradi: (1) noaniq xabar, (2) «yo'lovchi» chiqqan-u haydovchi belgisi ham bor (tekshiruv). AI ishonchi ≥ `AI_MIN_CONFIDENCE` (0.6) bo'lsa qabul qilinadi, tekshiruvda boshqacha desa AI ustun (`stats.ai_overrides`). AI ishlamasa kalit so'z natijasi qoladi. `AI_API_KEY` bo'sh bo'lsa noaniq xabar tashlanadi. Log: `[label/kw|learn|ai]`.
+- **AI backend fallback (2026-11-18):** `AI_MODEL` vergul bilan bir nechta model bo'lishi mumkin; `AI_API_KEY_2/AI_BASE_URL_2/AI_MODEL_2` (_6 gacha) — qo'shimcha bepul provayderlar. `ai._chat` ularni ketma-ket sinaydi, 429/xatoda keyingisiga o'tadi. Default modellar: `llama-3.1-8b-instant,llama-3.3-70b-versatile`.
+- **O'rganilgan belgilar (2026-11-18):** `services/learn.py` ishonchli natijadan (kalit so'z yoki ishonchli AI) emoji+so'z markerlarini `learned.json` ga sanaydi. `decide` AI'dan oldin `learn.guess` ni chaqiradi: haydovchi markeri yetarli (≥3, `MIN_SEEN`=5, `RATIO`=3) va yo'lovchi markeri bo'lmasa — AI'siz "driver" (`stats.learn_hits`, log manba `learn`). Faqat haydovchi tomoni, yo'lovchiga og'magan xabarda. O'z natijasidan o'rganmaydi. Startda yuklanadi, o'chganda/har 15 o'rganishda saqlanadi.
 - **Lichka yopiq yo'lovchi (2026-11-17):** username yo'q bo'lsa `tg://user` havolasi ko'pincha bosilmaydi va «💬 Yozish» tugmasi rad etiladi. E'lon ostida doim «🔗 Xabarga o'tish» (asl xabar, `Outgoing.source_url`) va «ℹ️ Lichka: … ismiga bosing» yo'riqnomasi. Shahar taxalluslari: quqon, qumqurgon, jarqurgon, kattaqurgon, qungirot.
 - **Donor parser (2026-11-17):** `/admin` → «🕵️‍♂️ Donor guruhlar (Parser)»: qo'shish (forward / @username / chat_id; yopiq guruh rad etiladi), ⏸/▶️, «🎯 Yopiq guruhga bog'lash», o'chirish. Jadvallar `donor_groups`, `dispatched`. `DONOR_DEDUP_MINUTES`=30. Statistika: `donor`, `donor_skipped`.
 - **Imlo xatolari (2026-11-17):** `nlp._fix_typos`: «ketamz/olamz» → «ketamiz/olamiz», «ketvomiz/ketyabmiz» → «ketyapmiz»; `DRIVER_TAKE_RE` («odam/pochta … olamiz» → +3). AI noaniq xabarni yo'lovchi deyishi uchun, kalit so'zlar haydovchi tomonga og'gan bo'lsa, ishonch ≥ 0.85 kerak.
@@ -66,7 +69,7 @@ Routerlar tartibi muhim: `admin, admin_panel, moderation, panel, driver_cabinet,
 - **Rejimlar:** `MODE=bot|userbot|both`. Userbot `/addgroup` bilan ochiq guruhga o'zi qo'shiladi. Taklif havolasi qo'llab-quvvatlanmaydi.
 
 ## `.env` kalitlari
-`MODE, BOT_TOKEN, DRIVERS_CHAT_ID, SOURCE_CHATS, ADMIN_IDS, GROUPS_FILE, MOD_FILE, USERS_FILE, ROUTES_FILE, ROUTE_FILTER_STRICT, ADMIN_USERNAME, BROADCAST_MAX_PER_DAY, AI_MIN_CONFIDENCE, DONOR_DEDUP_MINUTES, DB_FILE, SESSION_SECRET, FERNET_KEY_FILE, API_ID, API_HASH, SESSION_NAME, AI_API_KEY, AI_BASE_URL, AI_MODEL, DEDUP_MINUTES, SEND_INTERVAL_SEC, MAX_AGE_MINUTES, ORDER_COOLDOWN_SEC, OFFER_IN_GROUPS, USE_SYSTEM_CA`
+`MODE, BOT_TOKEN, DRIVERS_CHAT_ID, SOURCE_CHATS, ADMIN_IDS, GROUPS_FILE, MOD_FILE, USERS_FILE, ROUTES_FILE, LEARN_FILE, ROUTE_FILTER_STRICT, ADMIN_USERNAME, BROADCAST_MAX_PER_DAY, AI_MIN_CONFIDENCE, DONOR_DEDUP_MINUTES, DB_FILE, SESSION_SECRET, FERNET_KEY_FILE, API_ID, API_HASH, SESSION_NAME, AI_API_KEY, AI_BASE_URL, AI_MODEL, AI_API_KEY_2, AI_BASE_URL_2, AI_MODEL_2, DEDUP_MINUTES, SEND_INTERVAL_SEC, MAX_AGE_MINUTES, ORDER_COOLDOWN_SEC, OFFER_IN_GROUPS, USE_SYSTEM_CA`
 
 `.env` qiymatlarini, tokenni, `*.session`, `fernet.key` va `taxi.db` ni chatga chiqarmang.
 

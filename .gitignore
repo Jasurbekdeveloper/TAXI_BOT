@@ -6,6 +6,7 @@ moderation.json
 users.json
 routes.json
 aggregator.json
+learned.json
 taxi.db
 taxi.db-*
 fernet.key

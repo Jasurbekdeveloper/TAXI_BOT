@@ -54,6 +54,8 @@ MOD_FILE = Path(os.getenv("MOD_FILE", "").strip() or BASE_DIR / "moderation.json
 USERS_FILE = Path(os.getenv("USERS_FILE", "").strip() or BASE_DIR / "users.json")
 # Xizmat qilinadigan yo'nalishlar (maxfiy guruhga faqat shular yuboriladi)
 ROUTES_FILE = Path(os.getenv("ROUTES_FILE", "").strip() or BASE_DIR / "routes.json")
+# O'rganilgan belgilar (haydovchi e'lonlari uslubini eslab qoladi, AI'ga takror yubormaslik uchun)
+LEARN_FILE = Path(os.getenv("LEARN_FILE", "").strip() or BASE_DIR / "learned.json")
 # 1 = yo'nalishi aniqlanmagan e'lonlar ham filtrdan o'tmaydi. 0 = ularni o'tkazadi (e'lon yo'qotmaslik uchun)
 ROUTE_FILTER_STRICT = os.getenv("ROUTE_FILTER_STRICT", "").strip().lower() in ("1", "true", "yes")
 
@@ -71,12 +73,38 @@ API_ID = _int("API_ID")
 API_HASH = os.getenv("API_HASH", "").strip()
 SESSION_NAME = os.getenv("SESSION_NAME", "userbot").strip() or "userbot"
 
-# Bepul AI (OpenAI-mos). Default: Groq
+# Bepul AI (OpenAI-mos). Default: Groq.
+# AI_MODEL vergul bilan bir nechta model bo'lishi mumkin — biri 429/xato bersa keyingisi sinaladi.
+GROQ_BASE = "https://api.groq.com/openai/v1"
 AI_API_KEY = os.getenv("AI_API_KEY", "").strip()
-AI_BASE_URL = os.getenv("AI_BASE_URL", "https://api.groq.com/openai/v1").strip()
-AI_MODEL = os.getenv("AI_MODEL", "").strip() or "openai/gpt-oss-20b"
+AI_BASE_URL = os.getenv("AI_BASE_URL", "").strip() or GROQ_BASE
+AI_MODEL = os.getenv("AI_MODEL", "").strip() or "llama-3.1-8b-instant,llama-3.3-70b-versatile"
 # AI shundan past ishonch bilan javob bersa, uning natijasi qabul qilinmaydi (noaniq xabar tashlanadi)
 AI_MIN_CONFIDENCE = _float("AI_MIN_CONFIDENCE", 0.6)
+
+
+def _models(raw):
+    return [m.strip() for m in (raw or "").split(",") if m.strip()] or ["llama-3.1-8b-instant"]
+
+
+def ai_backends():
+    """Ketma-ket sinaladigan AI backendlari: [(base_url, api_key, model), ...].
+    Birinchisi 429/xato bersa keyingisiga o'tiladi (ai._chat).
+    Asosiy provayder: AI_API_KEY / AI_BASE_URL / AI_MODEL (AI_MODEL vergul bilan ko'p model).
+    Qo'shimcha bepul provayderlar (.env): AI_API_KEY_2 / AI_BASE_URL_2 / AI_MODEL_2, _3, ... (_6 gacha).
+    """
+    out = []
+    if AI_API_KEY:
+        for model in _models(AI_MODEL):
+            out.append((AI_BASE_URL or GROQ_BASE, AI_API_KEY, model))
+    for i in range(2, 7):
+        key = os.getenv(f"AI_API_KEY_{i}", "").strip()
+        if not key:
+            continue
+        base = os.getenv(f"AI_BASE_URL_{i}", "").strip() or GROQ_BASE
+        for model in _models(os.getenv(f"AI_MODEL_{i}", "").strip()):
+            out.append((base, key, model))
+    return out
 
 DEDUP_MINUTES = _int("DEDUP_MINUTES", 45)
 DONOR_DEDUP_MINUTES = _int("DONOR_DEDUP_MINUTES", 30)   # donor mijozi (User ID/telefon) shu vaqt ichida qayta uzatilmaydi

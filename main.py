@@ -26,7 +26,7 @@ from handlers import admin_panel, driver_cabinet
 from handlers.middlewares import TrackUsers
 from nlp import fmt_phone
 from pipeline import Incoming, process, sender
-from services import donor_parser
+from services import donor_parser, learn
 from services.broadcaster import manager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -184,8 +184,9 @@ async def preflight(bot: Bot):
     """Ko'p uchraydigan sozlash xatolarini startda aniq ko'rsatadi."""
     me = await bot.get_me()
     log.info("Bot: @%s | Rejim: %s | Guruhlar: %d", me.username, config.MODE, len(store.all_groups()))
-    if config.AI_API_KEY:
-        log.info("AI: yoqilgan (model=%s)", config.AI_MODEL)
+    backends = config.ai_backends()
+    if backends:
+        log.info("AI: yoqilgan (%d backend: %s)", len(backends), ", ".join(m for _, _, m in backends))
     else:
         log.warning("AI: o'chiq (AI_API_KEY bo'sh). Noaniq xabarlar tashlanadi, faqat kalit so'zli e'lonlar o'tadi.")
     if config.MODE in ("bot", "both") and not me.can_read_all_group_messages:
@@ -228,6 +229,7 @@ async def main():
         t.cancel()
     await asyncio.gather(*pending, return_exceptions=True)
     await manager.shutdown()
+    learn.save()                        # o'rganilgan belgilarni diskka yozamiz
     await bot.session.close()
     for t in done:
         t.result()

@@ -16,10 +16,12 @@ import ai
 import config
 import routes
 from nlp import analyze, canon_city, normalize, worth_ai
+from services import learn
 
 log = logging.getLogger(__name__)
 stats = {"seen": 0, "passenger": 0, "driver": 0, "unknown": 0, "ai_calls": 0, "ai_errors": 0,
-         "ai_overrides": 0, "donor": 0, "donor_skipped": 0, "dup": 0, "sent": 0, "failed": 0, "orders": 0, "relayed": 0}
+         "ai_overrides": 0, "learn_hits": 0, "donor": 0, "donor_skipped": 0, "dup": 0, "sent": 0, "failed": 0,
+         "orders": 0, "relayed": 0}
 MAX_ATTEMPTS = 4
 
 
@@ -194,9 +196,13 @@ def needs_ai(raw: str, p) -> bool:
 
 
 async def decide(raw: str, p) -> tuple[str, str, dict | None]:
-    """Xabar egasi kim: (label, manba, AI javobi). manba: "kw" (kalit so'zlar) yoki "ai"."""
+    """Xabar egasi kim: (label, manba, AI javobi). manba: "kw", "learn" (o'rganilgan belgilar) yoki "ai"."""
     if not needs_ai(raw, p):
         return p.label, "kw", None
+    # AI'ga yubormasdan oldin: o'rganilgan haydovchi belgilari yetarli bo'lsa (va yo'lovchiga og'magan bo'lsa)
+    if p.scores.get("driver", 0) >= p.scores.get("passenger", 0) and learn.guess(raw) == "driver":
+        stats["learn_hits"] += 1
+        return "driver", "learn", None
     stats["ai_calls"] += 1
     res = await ai.classify(raw)
     if not res:
@@ -230,6 +236,14 @@ async def process(m: Incoming) -> str | None:
         to = to or canon_city(res.get("to"))
         seats = seats or res.get("seats")
         when = when or res.get("time")
+    # Ishonchli natijadan belgilarni o'rganamiz (keyingi o'xshash xabar AI'siz aniqlansin).
+    # O'z-o'zini kuchaytirmaslik uchun "learn" manbasidan o'rganilmaydi.
+    if label in ("passenger", "driver"):
+        if src == "kw" and p.confident:
+            learn.learn(m.text, label)
+        elif src == "ai" and res and res["label"] == label \
+                and res["confidence"] >= max(config.AI_MIN_CONFIDENCE, 0.8):
+            learn.learn(m.text, label)
 
     stats[label if label in ("passenger", "driver") else "unknown"] += 1
     log.info("[%s/%s] %s | %s→%s | %s", label, src, m.chat_title, frm, to, m.text[:60].replace("\n", " "))
