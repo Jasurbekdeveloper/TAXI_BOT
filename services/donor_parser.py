@@ -219,16 +219,32 @@ def is_donor(chat_id) -> bool:
 
 async def _resolve_username(event, user_id):
     """userbot (donor guruh a'zosi) user_id dan @username ni aniqlaydi (mijozda bo'lsa). Best-effort.
-    access_hash akkauntga bog'liq — haydovchiga ko'chmaydi; lekin username bo'lsa havola hamma uchun ishlaydi."""
+    access_hash akkauntga bog'liq — haydovchiga ko'chmaydi; lekin username bo'lsa havola hamma uchun ishlaydi.
+    Donor xabarida mijoz «min» (bot ishorasi) bo'lsa, oddiy get_entity(id) ishlamaydi — shuning uchun
+    xabar kontekstida (InputPeerUserFromMessage) ham sinab ko'ramiz."""
     client = getattr(event, "client", None)
     if client is None or not user_id:
         return None
+    # 1) to'g'ridan-to'g'ri (akkaunt mijoz bilan umumiy chatda bo'lsa)
     try:
         ent = await client.get_entity(user_id)
-        return getattr(ent, "username", None)
+        if getattr(ent, "username", None):
+            return ent.username
+    except Exception:
+        pass
+    # 2) «min-user»: mijoz shu xabarda ishora qilingan — xabarni kontekst qilib aniqlaymiz
+    try:
+        from telethon.tl.types import InputPeerUserFromMessage
+        msg = getattr(event, "message", None)
+        msg_id = getattr(msg, "id", None) or getattr(event, "id", None)
+        if msg_id:
+            peer = await client.get_input_entity(event.chat_id)
+            ref = InputPeerUserFromMessage(peer=peer, msg_id=msg_id, user_id=user_id)
+            ent = await client.get_entity(ref)
+            return getattr(ent, "username", None)
     except Exception as e:
         log.info("[donor] username aniqlanmadi (uid=%s): %s", user_id, str(e)[:80])
-        return None
+    return None
 
 
 # ---------- asosiy oqim ----------
