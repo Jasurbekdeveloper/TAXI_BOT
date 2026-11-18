@@ -99,6 +99,17 @@ def test_ad_format_not_enough():
     assert asyncio.run(ad_format.build("Salom, qalaysizlar", use_ai=False))[0] is None
 
 
+def test_render_shows_id_and_tidy_text():
+    from pipeline import Incoming, render
+    m = Incoming(text="‼️‼️‼️ Toshkentga 1 odam bor\nСафар Такси +998901234567", chat_id=-1001234567890,
+                 chat_title="SAFAR", chat_username=None, msg_id=5, user_name="Ali", username=None, user_id=777888)
+    out = render(m, None, "Toshkent", 1, None, "+998 90 123 45 67")
+    assert "🆔 <code>777888</code>" in out                  # bizdagi e'londa ID ko'rsatiladi
+    assert "📞 +998 90 123 45 67" in out
+    assert "Toshkentga 1 odam bor" in out
+    assert "Сафар Такси" not in out and "‼️" not in out and "998901234567" not in out  # tozalandi
+
+
 def test_driver_leaning_unknown_needs_high_ai_confidence(fake_ai, monkeypatch):
     _, answers = fake_ai
     t = "Toshkentga ketamiz"                                # noaniq, lekin haydovchi tomonga og'gan

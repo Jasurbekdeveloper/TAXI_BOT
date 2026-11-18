@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 
 import routes
 from database import crud
-from nlp import analyze, find_phone, fmt_phone
+from nlp import analyze, find_phone, fmt_phone, is_spam, tidy
 
 log = logging.getLogger(__name__)
 
@@ -164,7 +164,8 @@ def extract(message, chat_id: int, sender=None) -> DonorOrder:
 
     p = analyze(raw)
     phone = find_phone(raw) or fmt_phone(getattr(sender, "phone", None))     # matnda yo'q bo'lsa profil raqami
-    return DonorOrder(chat_id=chat_id, msg_id=getattr(message, "id", 0), text=clean_text(raw), raw=raw,
+    text = tidy(raw) or clean_text(raw)      # "o'z formatimizga": imzo/reklama/telefon/emoji devori tozalanadi
+    return DonorOrder(chat_id=chat_id, msg_id=getattr(message, "id", 0), text=text, raw=raw,
                       user_id=user_id, username=username, phone=phone, urls=urls, frm=p.frm, to=p.to)
 
 
@@ -213,6 +214,10 @@ async def handle(event, exclude_sender_ids=()) -> str:
         sender = None
 
     from pipeline import decide, stats
+    if is_spam(raw):                                     # reklama / bot taklifi / "feyk xabar"
+        stats["donor_skipped"] += 1
+        log.info("[donor] spam o'tkazildi | %s", raw[:60].replace("\n", " "))
+        return "spam"
     p = analyze(raw)
     label, src, _ = await decide(raw, p)
     if label == "driver":                                # haydovchi e'loni yopiq guruhga tushmaydi

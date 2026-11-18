@@ -246,6 +246,55 @@ def find_phone(raw: str):
     return None
 
 
+# ---------- E'lon matnini tozalash ("o'z formatimizga" keltirish) ----------
+_URL_RE = re.compile(r"(?:https?://|tg://|www\.)\S+|\b(?:t\.me|telegram\.me)/\S+", re.I)
+_MENTION_RE = re.compile(r"@[A-Za-z]\w{2,31}")
+_HASHTAG_RE = re.compile(r"#\w+")
+# Haydovchiga foydasiz xizmat/reklama/imzo qatorlari — butunlay olib tashlanadi
+_JUNK_LINE_RE = re.compile(
+    r"user\s*id|клиент\s*личка|клиентга\s*ёз|mijoz\s*lichka|mijozga\s*yoz|lichka|личка|"
+    r"orqali yuborildi|yuborildi|подпиш|obuna|reklama|реклам|kanal(?:imiz|ga)|канал|admin\s*:|"
+    r"safar\s*taksi|сафар\s*такси|yangi xabar matnini|ustiga bosing", re.I)
+# "Tel:", "Тел:" kabi yorliqlar (raqamning o'zi alohida ko'rsatiladi)
+_TEL_LABEL_RE = re.compile(r"\b(?:tel|тел|phone|тел\.?|aloqa|bogla?nish)\s*[:：]?", re.I)
+# Emoji devori: 3+ ketma-ket emoji/belgi (‼️‼️‼️, 🔥🔥🔥, ⬇️⬇️⬇️) — bezak, olib tashlanadi
+_EMOJI_WALL_RE = re.compile(
+    r"(?:[\U0001F000-\U0001FAFF←-➿⬀-⯿☀-⛿‼⁉️⃣]\s*){3,}")
+# Spam/soxta: butun xabar reklama/bot taklifi/soxta bo'lganda (appended reklama qatori tidy() da tozalanadi)
+_SPAM_RE = re.compile(
+    r"feyk\s*xabar|\bfake\b|ustiga bosing|yangi xabar matnini|"
+    r"bot(?:imiz)?ga?\s*(?:kir|bos|yoz)|reklama qil", re.I)
+
+
+def tidy(text: str, drop_phones: bool = True) -> str:
+    """E'lonni "o'z formatimizga" keltiradi: reklama/imzo qatorlari, havola, @mention, hashtag,
+    emoji devori va (ixtiyoriy) telefon raqamlari olib tashlanadi — boshqa guruhdan nusxa ko'rinmasin."""
+    out = []
+    for ln in (text or "").splitlines():
+        if _JUNK_LINE_RE.search(ln):
+            continue
+        ln = _URL_RE.sub(" ", ln)
+        ln = _MENTION_RE.sub(" ", ln)
+        ln = _HASHTAG_RE.sub(" ", ln)
+        if drop_phones:
+            ln = PHONE_RE.sub(" ", ln)
+            ln = _TEL_LABEL_RE.sub(" ", ln)
+        ln = _EMOJI_WALL_RE.sub(" ", ln)
+        ln = re.sub(r"\s{2,}", " ", ln).strip(" -|•·:—,.")
+        if re.search(r"\w", ln):
+            out.append(ln)
+    s = re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
+    return s[:300]
+
+
+def is_spam(text: str) -> bool:
+    """Reklama / bot taklifi / "feyk xabar" / deyarli bo'sh xabar — e'lon qilinmaydi."""
+    t = (text or "").strip()
+    if len(re.sub(r"[^0-9A-Za-zА-Яа-яЎўҚқҒғҲҳ]", "", t)) < 3:    # mazmunli harf deyarli yo'q
+        return True
+    return bool(_SPAM_RE.search(t))
+
+
 def _find_time(raw: str, t: str):
     words = list(dict.fromkeys(WORD_TIME_RE.findall(t)))     # "ertaga ertalab": ikkalasi ham kerak
     clock = CLOCK_RE.search(raw)

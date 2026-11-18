@@ -53,6 +53,7 @@ Routerlar tartibi muhim: `admin, admin_panel, moderation, panel, driver_cabinet,
 - **Guruh qidiruvi va admin kontakti (2026-11-17):** guruh tanlashda «🔎 Nomi bo'yicha qidirish» (`dc:search`, FSM `GroupSearch`, filtr FSM data `gq` da, `normalize` bilan kirill=lotin). Ruxsat yo'q/blok/Global Stop/API yo'q xabarlarida bog'lanish tugmasi.
 - **E'lon formatlash (2026-11-17):** kabinetda «✍️ E'lon matni» → `ad_format.build` → oldindan ko'rish: «✅ Shu ko'rinishda» / «📝 O'z matnim» / «✏️ Qayta yozish». Userbot e'lonni `parse_mode=None` bilan yuboradi.
 - **E'lon:** marshrut, vaqt, kishi soni, telefon, profil, manba havolasi, «✅ Oldim», «💬 Yozish».
+- **Tozalangan "o'z formati" + ID + spam filtri (2026-11-18):** `nlp.tidy()` boshqa guruhdan olingan matnni "o'z formatimizga" keltiradi — imzo/reklama qatori (Сафар Такси, obuna, kanal), havola, @mention, hashtag, takror telefon va emoji devori (‼️‼️/🔥🔥) olib tashlanadi. `render` va `order_dispatcher` ikkisi ham `tidy` ishlatadi. «🧍 YO'LOVCHI» e'lonida endi `🆔 <code>user_id</code>` ko'rsatiladi (donor e'lonida avvaldan bor). `nlp.is_spam()` — «feyk xabar», «bot ustiga bosing», «yangi xabar matnini kiriting», deyarli bo'sh xabar e'lon qilinmaydi (`pipeline.process` → "other", `stats.spam`; `donor_parser.handle` → "spam").
 - **Dedup:** 45 daqiqa. Yetkazilmagan e'lon dublikat sanalmaydi.
 - **Navbat:** ~18 xabar/daqiqa, tarmoq xatosida qayta urinish.
 - **Eski xabarlar:** `MAX_AGE_MINUTES` dan eskisi e'lon qilinmaydi.

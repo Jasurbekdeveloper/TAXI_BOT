@@ -18,6 +18,30 @@ def test_driver_kishi_kerak_and_typos():
     assert "ketamiz" in nlp.normalize("toshkinga kitamz")
 
 
+def test_tidy_strips_branding_phone_emoji():
+    # imzo/reklama qatori, hashtag, @mention, telefon, emoji devori — tozalanadi
+    raw = ("‼️‼️‼️‼️ Denovdan Toshkentga 1 odam bor\nTel: +998901234567\n"
+           "Сафар Такси\n#Denov_Toshkent @reklama_kanal")
+    out = nlp.tidy(raw)
+    assert "Denovdan Toshkentga 1 odam bor" in out
+    assert "998901234567" not in out and "Tel" not in out        # telefon alohida ko'rsatiladi
+    assert "Сафар Такси" not in out and "#Denov" not in out and "@reklama" not in out
+    assert "‼️‼️" not in out                                       # emoji devori olib tashlandi
+
+
+def test_tidy_keeps_phone_when_asked():
+    assert "90 123 45 67" in nlp.tidy("Toshkentga odam bor 90 123 45 67", drop_phones=False)
+
+
+def test_is_spam():
+    assert nlp.is_spam("Feyk xabar")
+    assert nlp.is_spam("Sizga taksi keràkmi unda bot ustiga bosing")
+    assert nlp.is_spam("Yangi xabar matnini kiriting")
+    assert nlp.is_spam("🔥🔥🔥")                                  # mazmunli harf yo'q
+    assert not nlp.is_spam("Denovdan Toshkentga taksi kerak 2 kishi")
+    assert not nlp.is_spam("Toshkentga odam bor")
+
+
 def test_fmt_phone():
     assert nlp.fmt_phone("998901234567") == "+998 90 123 45 67"       # profil raqami (plyussiz)
     assert nlp.fmt_phone("+998 90 123 45 67") == "+998 90 123 45 67"

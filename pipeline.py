@@ -15,13 +15,13 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 import ai
 import config
 import routes
-from nlp import analyze, canon_city, normalize, worth_ai
+from nlp import analyze, canon_city, is_spam, normalize, tidy, worth_ai
 from services import learn
 
 log = logging.getLogger(__name__)
 stats = {"seen": 0, "passenger": 0, "driver": 0, "unknown": 0, "ai_calls": 0, "ai_errors": 0,
-         "ai_overrides": 0, "learn_hits": 0, "donor": 0, "donor_skipped": 0, "dup": 0, "sent": 0, "failed": 0,
-         "orders": 0, "relayed": 0}
+         "ai_overrides": 0, "learn_hits": 0, "spam": 0, "donor": 0, "donor_skipped": 0, "dup": 0, "sent": 0,
+         "failed": 0, "orders": 0, "relayed": 0}
 MAX_ATTEMPTS = 4
 
 
@@ -135,7 +135,11 @@ def render(m: Incoming, frm, to, seats, when, phone) -> str:
     e = html.escape
     route = " → ".join(e(x) for x in (frm, to) if x) if (frm and to) else (
         f"{e(frm)} →" if frm else f"→ {e(to)}" if to else "")
+    rid = repost_user_id(m.text)
+    uid = rid or (m.user_id if (m.user_id and m.user_id > 0) else None)
     lines = ["🧍 <b>YO'LOVCHI</b>"]
+    if uid:
+        lines.append(f"🆔 <code>{uid}</code>")
     if route:
         lines.append(f"📍 {route}")
     if when:
@@ -144,17 +148,17 @@ def render(m: Incoming, frm, to, seats, when, phone) -> str:
         lines.append(f"👥 {seats} kishi")
     if phone:
         lines.append(f"📞 {e(phone)}")
-    rid = repost_user_id(m.text)
     if rid:                                     # boshqa bot qayta joylagan: profil — asl mijozniki
         lines.append(f'👤 <a href="tg://user?id={rid}">{e(_repost_name(m.text) or "Mijoz profili")}</a>')
     elif m.username:
         lines.append(f"👤 @{e(m.username)}")
     elif m.user_id and m.user_id > 0:
         lines.append(f'👤 <a href="tg://user?id={m.user_id}">{e(m.user_name or "Profil")}</a>')
-    if not m.username and (rid or (m.user_id and m.user_id > 0)) and source_link(m):
+    if not m.username and uid and source_link(m):
         # username yo'q: tg://user havolasi ko'pincha bosilmaydi — asl xabardan ismiga bosib yoziladi
         lines.append("ℹ️ <i>Lichka: «🔗 Xabarga o'tish» → ismiga bosing → «Xabar yozish»</i>")
-    lines.append(f"\n💬 <i>{e(clean_text(m.text)[:400])}</i>")
+    snippet = tidy(m.text) or clean_text(m.text)[:400]
+    lines.append(f"\n💬 <i>{e(snippet)}</i>")
     link = source_link(m)
     src = f'<a href="{link}">{e(m.chat_title)}</a>' if link else e(m.chat_title)
     lines.append(f"🔗 {src}")
@@ -227,6 +231,10 @@ async def process(m: Incoming) -> str | None:
     stats["seen"] += 1
     if not m.text or len(m.text) > config.MAX_LEN:
         return None
+    if is_spam(m.text):                 # reklama / bot taklifi / "feyk xabar" — e'lon qilinmaydi
+        stats["spam"] += 1
+        log.info("[spam] %s | %s", m.chat_title, m.text[:60].replace("\n", " "))
+        return "other"
     p = analyze(m.text)
     label, frm, to, seats, when = p.label, p.frm, p.to, p.seats, p.when
 

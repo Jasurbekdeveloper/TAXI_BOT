@@ -28,7 +28,7 @@ def test_text_link_tg_user():
     o = extract(msg(t, [ent_url(t, "Клиент личкаси", "tg://user?id=5551234")]), -100500)
     assert o.user_id == 5551234 and o.link == "tg://user?id=5551234"
     assert o.frm == "Denov" and o.to == "Samarqand"
-    assert o.text == "🚖 Denovdan Samarqand ketish qancha bo'lyapti\nКлиент личкаси"
+    assert o.text == "🚖 Denovdan Samarqand ketish qancha bo'lyapti"   # "Клиент личкаси" xizmat qatori tozalandi
 
 
 def test_inline_button_username_and_cleanup():
@@ -39,7 +39,7 @@ def test_inline_button_username_and_cleanup():
                                [{"text": "👤 Mijoz lichkasi", "url": "https://t.me/ali_client"}]]), -100500)
     assert o.username == "ali_client" and o.user_id is None and o.link == "https://t.me/ali_client"
     assert o.phone == "+998 90 123 45 67"
-    assert o.text == "Termizdan Toshkentga 2 kishi kerak\nTel: 90 123 45 67"   # reklama, hashtag, link tozalandi
+    assert o.text == "Termizdan Toshkentga 2 kishi kerak"   # reklama, hashtag, link, telefon qatori tozalandi
     assert "https://t.me/taksi_kanal" in o.urls and "https://t.me/ali_client" in o.urls
 
 
