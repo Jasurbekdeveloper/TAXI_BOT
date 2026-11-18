@@ -87,6 +87,10 @@ def test_client_button_url_preserved():
     o2 = extract(msg("Buxoroga taksi kerak",
                      buttons=[[{"text": "Mijoz lichkasi", "url": "https://t.me/ali_client"}]]), -100500)
     assert o2.username == "ali_client" and o2.link == "https://t.me/ali_client"
+    # tg://resolve?domain=username ko'rinishidagi lichka tugmasi — username olinadi
+    o3 = extract(msg("Samarqandga taksi kerak",
+                     buttons=[[{"text": "👤 Клиент личкаси", "url": "tg://resolve?domain=rustam_aka"}]]), -100500)
+    assert o3.username == "rustam_aka" and o3.link == "https://t.me/rustam_aka"
 
 
 def test_channel_link_not_taken_as_client():

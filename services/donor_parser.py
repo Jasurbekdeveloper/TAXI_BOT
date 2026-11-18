@@ -25,6 +25,8 @@ log = logging.getLogger(__name__)
 TG_USER_RE = re.compile(r"tg://user\?id=(\d+)", re.I)
 TEXT_ID_RE = re.compile(r"(?:user\s*_?id|юзер\s*id|айди|\bid)\s*[:：#=]?\s*(\d{5,})", re.I)
 TME_RE = re.compile(r"(?:https?://)?(?:t\.me|telegram\.me)/([A-Za-z][A-Za-z0-9_]{3,31})(?:[/?#].*)?$", re.I)
+# tg://resolve?domain=username  (lichka tugmasi ko'pincha shu ko'rinishda bo'ladi)
+TG_RESOLVE_RE = re.compile(r"tg://resolve\?domain=([A-Za-z][A-Za-z0-9_]{3,31})", re.I)
 URL_RE = re.compile(r"(?:https?://|tg://|www\.)\S+|\b(?:t\.me|telegram\.me)/\S+", re.I)
 MENTION_RE = re.compile(r"@[A-Za-z][A-Za-z0-9_]{3,31}")
 HASHTAG_RE = re.compile(r"#\w+")
@@ -93,14 +95,19 @@ def _slice16(text: str, offset: int, length: int) -> str:
     return b[offset * 2:(offset + length) * 2].decode("utf-16-le", errors="ignore")
 
 
-def _tme_username(url: str) -> str | None:
-    m = TME_RE.match((url or "").strip())
+def _url_username(url: str) -> str | None:
+    """t.me/username yoki tg://resolve?domain=username dan mijoz username'ini ajratadi."""
+    u = (url or "").strip()
+    m = TME_RE.match(u) or TG_RESOLVE_RE.search(u)
     if not m:
         return None
     name = m.group(1)
     if name.lower() in RESERVED_TME or name.lower().endswith("bot"):
         return None
     return name
+
+
+_tme_username = _url_username          # eski nom (moslik uchun)
 
 
 def collect_links(message) -> list[tuple[str, str | None, int | None]]:
