@@ -54,13 +54,25 @@ class DonorOrder:
     urls: list[str] = field(default_factory=list)
     frm: str | None = None
     to: str | None = None
+    btn_url: str | None = None                   # donor xabaridagi «Клиент личкаси» tugmasining asl URL'i
+    source_title: str | None = None              # qaysi donor guruhdan olingani
 
     @property
     def link(self) -> str | None:
         if self.username:
             return f"https://t.me/{self.username}"
+        if self.btn_url:                         # donor tugmasining asl havolasi (ko'pincha ishlaydi)
+            return self.btn_url
         if self.user_id:
             return f"tg://user?id={self.user_id}"
+        return None
+
+    @property
+    def source_url(self) -> str | None:
+        """Asl xabarga havola (donor guruh a'zolari uchun ochiladi; «🔗 Xabarga o'tish» tugmasi)."""
+        s = str(self.chat_id)
+        if s.startswith("-100") and self.msg_id:
+            return f"https://t.me/c/{s[4:]}/{self.msg_id}"
         return None
 
     def dedup_keys(self) -> list[str]:
@@ -150,11 +162,18 @@ def extract(message, chat_id: int, sender=None) -> DonorOrder:
     m = CLIENT_MENTION_RE.search(raw)
     if m:
         username = m.group(1)
+    btn_url = None
     if username is None:
         for label, url, _ in links:
             name = _tme_username(url or "")
             if name and CLIENT_HINT_RE.search(label or ""):
                 username = name
+                break
+    # Lichka tugmasining asl URL'i (username bo'lmasa — shuni o'zi uzatiladi, donor tugmasi kabi ishlashi uchun)
+    if username is None:
+        for label, url, _ in links:
+            if url and CLIENT_HINT_RE.search(label or "") and url.startswith(("tg://", "http")):
+                btn_url = url
                 break
     # 4) xabarni oddiy foydalanuvchining o'zi yozgan bo'lsa
     if user_id is None and username is None and sender is not None and not getattr(sender, "bot", False) \
@@ -166,7 +185,8 @@ def extract(message, chat_id: int, sender=None) -> DonorOrder:
     phone = find_phone(raw) or fmt_phone(getattr(sender, "phone", None))     # matnda yo'q bo'lsa profil raqami
     text = tidy(raw) or clean_text(raw)      # "o'z formatimizga": imzo/reklama/telefon/emoji devori tozalanadi
     return DonorOrder(chat_id=chat_id, msg_id=getattr(message, "id", 0), text=text, raw=raw,
-                      user_id=user_id, username=username, phone=phone, urls=urls, frm=p.frm, to=p.to)
+                      user_id=user_id, username=username, phone=phone, urls=urls, frm=p.frm, to=p.to,
+                      btn_url=btn_url)
 
 
 # ---------- donor ro'yxati (kesh) ----------

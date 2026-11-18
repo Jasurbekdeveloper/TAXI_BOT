@@ -29,6 +29,11 @@ def render(o: DonorOrder) -> str:
         lines += ["", f'👤 <a href="{link}">Клиент личкаси</a>', f'✍️ <a href="{link}">Клиентга ёзиш</a>']
         if o.username:
             lines.append(f"@{e(o.username)}")
+        elif not o.phone:
+            # username/telefon yo'q: tg://user havolasi begona uchun ochilmasligi mumkin — ID bilan ogohlantiramiz
+            lines.append("ℹ️ <i>Havola ochilmasa — User ID orqali toping</i>")
+    if o.source_title:
+        lines.append(f"📡 <i>Manba: {e(o.source_title)}</i>")
     from pipeline import route_hashtag
     tag = route_hashtag(o.frm, o.to)
     if tag:
@@ -57,8 +62,10 @@ async def dispatch(o: DonorOrder, donor=None) -> str:
     crud.mark_dispatched(keys)
     if donor is not None:
         crud.donor_forwarded(o.chat_id)
+        o.source_title = donor["title"] or str(o.chat_id)    # qaysi guruhdan olingani
     stats["donor"] += 1
     log.info("[donor] %s → %s | uid=%s un=%s tel=%s", o.chat_id, target, o.user_id, o.username, o.phone)
     await queue.put(Outgoing(render(o), key="donor:" + (keys[0] if keys else str(o.msg_id)),
-                             contact_url=o.link, chat_id=target, style="donor", undo_keys=keys))
+                             contact_url=o.link, chat_id=target, style="donor", undo_keys=keys,
+                             source_url=o.source_url))
     return "sent"

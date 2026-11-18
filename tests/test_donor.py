@@ -76,6 +76,19 @@ def test_profile_phone_fallback():
     assert extract(msg("Toshkentga odam bor, ketadi"), -1, sender=hidden).phone is None
 
 
+def test_client_button_url_preserved():
+    from services.donor_parser import extract
+    # username yo'q: «Клиент личкаси» tugmasining ASL URL'i uzatiladi (donor tugmasi kabi ishlashi uchun)
+    o = extract(msg("Samarqandga taksi kerak",
+                    buttons=[[{"text": "👤 Клиент личкаси", "url": "tg://openmessage?user_id=7982067161"}]]), -100500)
+    assert o.username is None and o.btn_url == "tg://openmessage?user_id=7982067161"
+    assert o.link == "tg://openmessage?user_id=7982067161"      # qayta qurilgan tg://user emas, asl havola
+    # t.me/username tugmasi bo'lsa — username ustun (ishonchli havola)
+    o2 = extract(msg("Buxoroga taksi kerak",
+                     buttons=[[{"text": "Mijoz lichkasi", "url": "https://t.me/ali_client"}]]), -100500)
+    assert o2.username == "ali_client" and o2.link == "https://t.me/ali_client"
+
+
 def test_channel_link_not_taken_as_client():
     from services.donor_parser import extract
     o = extract(msg("Toshkentga taksi kerak", buttons=[[{"text": "Kanalimiz", "url": "https://t.me/zakaz_kanal"}],
@@ -118,8 +131,10 @@ def test_handle_dispatch_dedup_and_driver_skip(env):
     assert asyncio.run(env.dp.handle(e1)) == "sent"
     item = env.q.get_nowait()
     assert item.chat_id == -1009999 and item.style == "donor" and item.contact_url == "tg://user?id=5551234"
+    assert item.source_url == "https://t.me/c/500/1"           # asl xabarga havola (Manba)
     assert "Yangi mijoz aniqlandi!" in item.text and "<code>5551234</code>" in item.text
     assert '<a href="tg://user?id=5551234">Клиент личкаси</a>' in item.text and "#Denov_Samarqand" in item.text
+    assert "Manba: Donor A" in item.text                        # qaysi guruhdan olingani ko'rsatiladi
     assert asyncio.run(env.dp.handle(e1)) == "seen"                     # bir xabarni ikki akkaunt ko'rdi
     e2 = event("Yana Denovdan taksi kerak", 2, buttons=[[{"text": "Lichka", "url": "tg://user?id=5551234"}]])
     assert asyncio.run(env.dp.handle(e2)) == "dup"                      # 30 daqiqa ichida shu User ID

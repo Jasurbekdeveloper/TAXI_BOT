@@ -277,6 +277,8 @@ def taken_kb(passenger_id=None, url=None, style="default", source_url=None):
     data = f"take:{passenger_id}" if passenger_id else "take"
     if style == "donor":
         rows = [[InlineKeyboardButton(text="👤 Клиент личкаси", url=url)]] if url else []
+        if source_url:                              # asl xabarga havola (donor tugmasi shu yerda ishlaydi)
+            rows.append([InlineKeyboardButton(text="🔗 Xabarga o'tish", url=source_url)])
         rows.append([InlineKeyboardButton(text="✅ Buyurtmani oldim", callback_data=data)])
         return InlineKeyboardMarkup(inline_keyboard=rows)
     row = [InlineKeyboardButton(text="✅ Oldim", callback_data=data)]
