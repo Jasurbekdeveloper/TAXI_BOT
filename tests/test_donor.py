@@ -147,6 +147,19 @@ def test_handle_dispatch_dedup_and_driver_skip(env):
     assert env.q.empty() and env.crud.get_donor(-100500)["forwarded"] == 1
 
 
+def test_handle_resolves_username_via_userbot(env):
+    # matnda @username yo'q, lekin userbot (donor a'zosi) user_id dan @username topadi -> ishlaydigan havola
+    class FakeClient:
+        async def get_entity(self, uid):
+            assert uid == 7982067161
+            return NS(username="topildi_user")
+    ev = event("Samarqandga taksi kerak User ID: 7982067161", 30)
+    ev.client = FakeClient()
+    assert asyncio.run(env.dp.handle(ev)) == "sent"
+    item = env.q.get_nowait()
+    assert item.contact_url == "https://t.me/topildi_user" and "@topildi_user" in item.text
+
+
 def test_donor_target_and_disable(env):
     from services.donor_parser import reload
     env.crud.set_donor_target(-100500, -100777, "Yopiq B")

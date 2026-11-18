@@ -210,6 +210,20 @@ def is_donor(chat_id) -> bool:
     return bool(d and d["enabled"])
 
 
+async def _resolve_username(event, user_id):
+    """userbot (donor guruh a'zosi) user_id dan @username ni aniqlaydi (mijozda bo'lsa). Best-effort.
+    access_hash akkauntga bog'liq — haydovchiga ko'chmaydi; lekin username bo'lsa havola hamma uchun ishlaydi."""
+    client = getattr(event, "client", None)
+    if client is None or not user_id:
+        return None
+    try:
+        ent = await client.get_entity(user_id)
+        return getattr(ent, "username", None)
+    except Exception as e:
+        log.info("[donor] username aniqlanmadi (uid=%s): %s", user_id, str(e)[:80])
+        return None
+
+
 # ---------- asosiy oqim ----------
 async def handle(event, exclude_sender_ids=()) -> str:
     """Donor guruh xabari. Natija: 'sent', 'dup', 'driver', 'empty', 'no_contact', 'seen', 'skip'."""
@@ -246,6 +260,10 @@ async def handle(event, exclude_sender_ids=()) -> str:
         return "driver"
 
     order = extract(message, chat_id, sender)
+    if order.user_id and not order.username and not order.btn_url:   # uid bor, havola yo'q: username'ni aniqlab ko'ramiz
+        un = await _resolve_username(event, order.user_id)
+        if un:
+            order.username = un
     if not order.text or not (order.link or order.phone):
         stats["donor_skipped"] += 1
         return "no_contact"
