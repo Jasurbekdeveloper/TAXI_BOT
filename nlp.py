@@ -276,7 +276,12 @@ _SPAM_RE = re.compile(
     r"tekin\s*qo\W?sh|"
     # Mahsulot reklamalari (jalyuzi, mebel, ishlab chiqaruvchi, fabrika narxi...)
     r"жалюзи|jalyuzi|jalüzi|ишлаб\s*чиқарув|ishlab\s*chiqaruv|"
-    r"фабрика\s*нарх|fabrika\s*narx|чегирма\s*билан|chegirma\s*bilan", re.I)
+    r"фабрика\s*нарх|fabrika\s*narx|чегирма\s*билан|chegirma\s*bilan|"
+    # "Ishlab top / daromad / jamoaga odam" scam reklamalari (ko'pincha ruscha, lichkaga chaqiradi)
+    r"пиши\s*в\s*(?:лс|личк)|в\s*(?:лс|личк\w*)\W{0,3}пиши|обсудим\s*в\s*личк|"
+    r"зарабат\w*|подработк\w*|доход\s*от|получать?\s*\d+\W{0,3}\d*\s*к\b|"
+    r"в\s*команд\w*|за\s*рейс|новую\s*тему|тик\s*ток|tik\s*tok|пересмотр\w*\s*видео|"
+    r"daromad|ishlab\s*top|qo\W?shimcha\s*ish|kunlik\s*daromad", re.I)
 
 
 def tidy(text: str, drop_phones: bool = True) -> str:

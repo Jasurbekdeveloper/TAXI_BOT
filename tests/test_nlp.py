@@ -42,7 +42,12 @@ def test_is_spam():
     assert nlp.is_spam("Mega aksiya💐 Jonli odam qo'shamiz arzon narxda 1000 tasi 25 ming")
     assert nlp.is_spam("Obunachi qo'shamiz tekin, AKSIYA 1 KUN BO'LADI ulgurib qoling")
     assert nlp.is_spam("🔲 ЖАЛЮЗИ Ишлаб Чиқарувчидан Фабрика Нархида +998997640057")   # mahsulot reklamasi
+    # "ishlab top / daromad / jamoaga odam" scam reklamalari (ruscha, lichkaga chaqiradi) — taksi emas
+    assert nlp.is_spam("В Тик токе пересмотреть видео + комментарии оплата 2000")
+    assert nlp.is_spam("Пиши в лс я показываю как сегодня получать 6-8к")
+    assert nlp.is_spam("Возьму водилу в команду ЗП от 1000$ за рейс Все обсудим в личке, пиши")
     assert not nlp.is_spam("Denovdan Toshkentga taksi kerak 2 kishi")
+    assert not nlp.is_spam("Toshkent dan Surxondaryo qiziriqga 1ta odam bor ketadigan")
     assert not nlp.is_spam("Toshkentga odam bor")
     assert not nlp.is_spam("Toshkentga 3 odam olamiz joy bor")    # haydovchi e'loni — spam emas
 
