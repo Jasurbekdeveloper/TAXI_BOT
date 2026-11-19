@@ -252,9 +252,23 @@ async def contact(client: TelegramClient, order_no: int, driver_id: int, driver_
     return res
 
 
+_active = {"owner_id": None}               # ishlab turgan userbot akkaunti (register() da o'rnatiladi)
+
+
+def active_owner() -> int | None:
+    """Bot o'zi o'qigan xabarlar uchun: access_hash yo'q, lekin userbot ham o'sha guruhda bo'lsa,
+    Telethon sessiyasi mijozni allaqachon «ko'rgan» — get_input_entity(user_id) shu keshdan topadi."""
+    return _active["owner_id"]
+
+
 def register(client: TelegramClient, closed_chat_ids):
     """Yopiq guruhlarda haydovchi #Order_N e'longa reply qilsa — mijozga yozadi.
     closed_chat_ids: chaqiriladigan funksiya (ro'yxat ish davomida o'zgaradi)."""
+
+    async def _set_owner():
+        _active["owner_id"] = (await client.get_me()).id
+
+    client.loop.create_task(_set_owner())
     owner = {"id": None}
 
     @client.on(events.NewMessage(incoming=True))

@@ -158,7 +158,7 @@ def render(m: Incoming, frm, to, seats, when, phone, order_no: int | None = None
         lines.append(f"👤 @{e(m.username)}")
     elif m.user_id and m.user_id > 0:
         lines.append(f'👤 <a href="tg://user?id={m.user_id}">{e(m.user_name or "Profil")}</a>')
-    if not m.username and uid and source_link(m):
+    if not m.username and uid and source_link(m) and not order_no:
         # username yo'q: tg://user havolasi ko'pincha bosilmaydi — asl xabardan ismiga bosib yoziladi
         lines.append("ℹ️ <i>Lichka: «🔗 Xabarga o'tish» → ismiga bosing → «Xabar yozish»</i>")
     snippet = tidy(m.text) or clean_text(m.text)[:400]
@@ -276,10 +276,13 @@ async def process(m: Incoming) -> str | None:
     rid = repost_user_id(m.text)                # bot qayta joylagan bo'lsa, "Yozish" asl mijozga ochilsin
     url = contact_url(None, rid) if rid else contact_url(m.username, m.user_id)
     order_no = None
-    if m.user_id and not m.username and m.owner_id and not rid:   # username'siz mijoz: #Order tizimi
+    if m.user_id and m.user_id > 0 and not m.username and not rid:   # username'siz mijoz: #Order tizimi
         try:
             from services import order_contact
-            order_no = order_contact.save(m.user_id, m.access_hash, m.owner_id, m.user_name)
+            # Bot o'qigan xabarda access_hash yo'q: userbot akkaunti sessiya keshidan topishga urinadi
+            owner = m.owner_id or order_contact.active_owner()
+            if owner:
+                order_no = order_contact.save(m.user_id, m.access_hash, owner, m.user_name)
         except Exception as e:                  # #Order ishlamasa ham e'lon yo'qolmasin
             log.warning("#Order saqlanmadi: %s", e)
     await queue.put(Outgoing(render(m, frm, to, seats, when, phone, order_no), key,
