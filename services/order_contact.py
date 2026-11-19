@@ -109,9 +109,20 @@ async def remember(client: TelegramClient, event, sender=None) -> int | None:
             pass
     me = await client.get_me()
     name = " ".join(x for x in (getattr(sender, "first_name", None), getattr(sender, "last_name", None)) if x)
+    return save(sender.id, access_hash, me.id, name)
+
+
+def save(user_id: int, access_hash: int | None, owner_id: int, name: str | None = None) -> int:
+    """Yozuv qo'shadi va #Order raqamini qaytaradi. Shu mijozning muddati o'tmagan yozuvi bo'lsa — o'sha raqam."""
+    row = _conn.execute("SELECT order_no FROM order_contacts WHERE user_id=? AND owner_id=? AND created>? "
+                        "ORDER BY order_no DESC LIMIT 1", (user_id, owner_id, time.time() - ttl_sec())).fetchone()
+    if row:
+        _conn.execute("UPDATE order_contacts SET access_hash=COALESCE(?, access_hash), contacted=0 "
+                      "WHERE order_no=?", (access_hash, row[0]))
+        return row[0]
     cur = _conn.execute(
         "INSERT INTO order_contacts(user_id, access_hash, owner_id, name, created) VALUES (?,?,?,?,?)",
-        (sender.id, access_hash, me.id, name[:60], time.time()))
+        (user_id, access_hash, owner_id, (name or "")[:60], time.time()))
     return cur.lastrowid
 
 
@@ -206,6 +217,39 @@ async def _order_no_from(event) -> int | None:
         replied = await event.get_reply_message()
         m = ORDER_RE.search(getattr(replied, "raw_text", "") or "")
     return int(m.group(1)) if m else None
+
+
+_REPLY.update({
+    "expired": "⌛ Bu buyurtma eskirgan. Telefon raqami orqali bog'laning.",
+    "already": "ℹ️ Bu mijozga allaqachon boshqa haydovchi orqali xabar yuborilgan.",
+    "other_account": "⚠️ Bu mijozni boshqa userbot akkaunti ko'rgan, yozib bo'lmadi.",
+    "no_userbot": "⚠️ Userbot hozir ishlamayapti. Telefon raqami orqali bog'laning.",
+})
+
+
+async def contact(client: TelegramClient, order_no: int, driver_id: int, driver_username: str | None,
+                  driver_name: str | None) -> str:
+    """«💬 Yozish» tugmasi (username'siz mijoz): mijozga «haydovchi bog'lanmoqchi» deb yozadi. Natija kaliti _REPLY da."""
+    rec = find(order_no)
+    if not rec:
+        return "expired"
+    if rec["owner_id"] != (await client.get_me()).id:
+        return "other_account"
+    if rec["contacted"]:
+        return "already"
+    if driver_username:
+        mention = f"@{driver_username}"
+    else:
+        try:                                # mention ishlashi uchun userbot haydovchini tanishi kerak
+            await client.get_input_entity(driver_id)
+            mention = f'<a href="tg://user?id={driver_id}">{html.escape(driver_name or "Haydovchi")}</a>'
+        except (ValueError, PeerIdInvalidError):
+            mention = html.escape(driver_name or "Haydovchi")
+    _conn.execute("UPDATE order_contacts SET contacted=1 WHERE order_no=?", (order_no,))   # ikki haydovchi bossa ham bir marta
+    res = await send_dm(client, rec["user_id"], rec["access_hash"], DM_TEXT.format(driver=mention))
+    if res != "ok":
+        _conn.execute("UPDATE order_contacts SET contacted=0 WHERE order_no=?", (order_no,))
+    return res
 
 
 def register(client: TelegramClient, closed_chat_ids):

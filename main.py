@@ -26,7 +26,7 @@ from handlers import admin_panel, driver_cabinet
 from handlers.middlewares import TrackUsers
 from nlp import fmt_phone
 from pipeline import Incoming, process, sender
-from services import donor_parser, learn
+from services import donor_parser, learn, order_contact
 from services.broadcaster import manager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -84,7 +84,7 @@ async def on_channel_post(msg: Message):
 def _after_take_kb(cb: CallbackQuery, chat_url: str | None):
     """"Oldim" yo'qoladi, bog'lanish tugmalari qoladi."""
     old = cb.message.reply_markup.inline_keyboard if cb.message.reply_markup else []
-    rows = [[b for b in row if b.url] for row in old]
+    rows = [[b for b in row if b.url or (b.callback_data or "").startswith("oc:")] for row in old]
     rows = [row for row in rows if row]
     if chat_url:
         rows.append([InlineKeyboardButton(text="💬 Bot orqali yozish", url=chat_url)])
@@ -129,11 +129,31 @@ async def on_take(cb: CallbackQuery, bot: Bot):
         await cb.answer(url=chat_url)
 
 
+# ---------- «💬 Yozish»: username'siz mijozga userbot orqali ----------
+@router.callback_query(F.data.regexp(r"^oc:\d+$"))
+async def on_order_contact(cb: CallbackQuery, bot: Bot):
+    client = admin.userbot
+    if client is None:
+        await cb.answer(order_contact._REPLY["no_userbot"], show_alert=True)
+        return
+    await cb.answer("⏳ Mijozga xabar yuborilmoqda...")
+    who = cb.from_user
+    res = await order_contact.contact(client, int(cb.data[3:]), who.id, who.username, who.full_name)
+    text = order_contact._REPLY[res]
+    try:                                    # natija haydovchiga shaxsan (botni ochgan bo'lsa)
+        await bot.send_message(who.id, text)
+    except AiogramError:                    # bo'lmasa guruhda e'longa javob qilib
+        name = f"@{who.username}" if who.username else html.escape(who.full_name)
+        if isinstance(cb.message, Message):
+            await cb.message.reply(f"{name}: {text}", parse_mode="HTML")
+
+
 # ---------- 2-rejim: userbot (Telethon) ----------
 async def run_userbot():
     from telethon import TelegramClient, events
 
     client = TelegramClient(str(config.BASE_DIR / config.SESSION_NAME), config.API_ID, config.API_HASH)
+    me_id = {"id": None}                # userbot akkaunti ID (#Order: access_hash shu akkauntga tegishli)
 
     # chats= filtri ishlatilmaydi: u faqat startda o'qiladi, ro'yxat esa ish davomida o'zgaradi
     @client.on(events.NewMessage(incoming=True))
@@ -160,6 +180,7 @@ async def run_userbot():
             user_name=f"{first} {last}".strip() or None,
             username=getattr(sender_, "username", None), user_id=None if broadcast else event.sender_id,
             phone=None if broadcast else fmt_phone(getattr(sender_, "phone", None)),   # profil raqami ochiq bo'lsa
+            access_hash=getattr(sender_, "access_hash", None), owner_id=me_id["id"],
         ))
 
     try:
@@ -171,6 +192,8 @@ async def run_userbot():
         await asyncio.Event().wait()    # bu vazifa abadiy kutadi, shu bilan main() to'xtamaydi
         return
     admin.userbot = client
+    me_id["id"] = (await client.get_me()).id
+    order_contact.register(client, routes.closed_chat_ids)   # haydovchi #Order ga reply qilsa — mijozga yozadi
     log.info("Userbot ishga tushdi")
     try:
         await client.run_until_disconnected()

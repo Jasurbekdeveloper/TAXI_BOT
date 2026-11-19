@@ -36,6 +36,8 @@ class Incoming:
     username: str | None
     user_id: int | None
     phone: str | None = None            # muallif profilidagi ochiq raqam (userbot ko'rsa); matnda bo'lmasa ishlatiladi
+    access_hash: int | None = None      # userbot ko'rgan muallif (username'siz mijozga #Order orqali yozish uchun)
+    owner_id: int | None = None         # mijozni ko'rgan userbot akkaunti
 
 
 @dataclass
@@ -50,6 +52,7 @@ class Outgoing:
     style: str = "default"                  # "donor": «👤 Клиент личкаси» + «✅ Buyurtmani oldim» tugmalari
     undo_keys: list | None = None           # donor dublikat kalitlari: yetkazilmasa bazadan olib tashlanadi
     source_url: str | None = None           # «🔗 Xabarga o'tish»: asl xabar (lichka yopiq bo'lsa ismiga bosib yoziladi)
+    order_no: int | None = None             # username'siz mijoz: «💬 Yozish» tugmasi userbot orqali yozadi
     route: tuple | None = None              # (frm, to): yuborish oldidan yopiq guruh qayta aniqlanadi (admin almashtirsa)
 
 
@@ -132,7 +135,7 @@ def _repost_name(text: str) -> str | None:
     return None
 
 
-def render(m: Incoming, frm, to, seats, when, phone) -> str:
+def render(m: Incoming, frm, to, seats, when, phone, order_no: int | None = None) -> str:
     e = html.escape
     route = " → ".join(e(x) for x in (frm, to) if x) if (frm and to) else (
         f"{e(frm)} →" if frm else f"→ {e(to)}" if to else "")
@@ -166,6 +169,8 @@ def render(m: Incoming, frm, to, seats, when, phone) -> str:
     tag = route_hashtag(frm, to)
     if tag:
         lines.append(tag)
+    if order_no:                                # haydovchi shu e'longa reply qilsa, userbot mijozga yozadi
+        lines.append(f"#Order_{order_no}")
     return "\n".join(lines)
 
 
@@ -270,14 +275,28 @@ async def process(m: Incoming) -> str | None:
         return label
     rid = repost_user_id(m.text)                # bot qayta joylagan bo'lsa, "Yozish" asl mijozga ochilsin
     url = contact_url(None, rid) if rid else contact_url(m.username, m.user_id)
-    await queue.put(Outgoing(render(m, frm, to, seats, when, phone), key,
-                             contact_url=url, chat_id=routes.target_chat(frm, to), source_url=source_link(m),
-                             route=(frm, to)))
+    order_no = None
+    if m.user_id and not m.username and m.owner_id and not rid:   # username'siz mijoz: #Order tizimi
+        try:
+            from services import order_contact
+            order_no = order_contact.save(m.user_id, m.access_hash, m.owner_id, m.user_name)
+        except Exception as e:                  # #Order ishlamasa ham e'lon yo'qolmasin
+            log.warning("#Order saqlanmadi: %s", e)
+    await queue.put(Outgoing(render(m, frm, to, seats, when, phone, order_no), key,
+                             contact_url=None if order_no else url, order_no=order_no,
+                             chat_id=routes.target_chat(frm, to), source_url=source_link(m), route=(frm, to)))
     return label
 
 
-def taken_kb(passenger_id=None, url=None, style="default", source_url=None):
+def taken_kb(passenger_id=None, url=None, style="default", source_url=None, order_no=None):
     data = f"take:{passenger_id}" if passenger_id else "take"
+    if order_no and style != "donor":       # username yo'q: bitta tugma — bosilsa userbot mijozga yozadi
+        row = [InlineKeyboardButton(text="✅ Oldim", callback_data=data),
+               InlineKeyboardButton(text="💬 Yozish", callback_data=f"oc:{order_no}")]
+        rows = [row]
+        if source_url:
+            rows.append([InlineKeyboardButton(text="🔗 Xabarga o'tish", url=source_url)])
+        return InlineKeyboardMarkup(inline_keyboard=rows)
     if style == "donor":
         rows = [[InlineKeyboardButton(text="👤 Клиент личкаси", url=url)]] if url else []
         if source_url:                              # asl xabarga havola (donor tugmasi shu yerda ishlaydi)
@@ -296,7 +315,7 @@ def taken_kb(passenger_id=None, url=None, style="default", source_url=None):
 async def _deliver(bot: Bot, item: Outgoing):
     async def send(url):
         await bot.send_message(item.chat_id or config.DRIVERS_CHAT_ID, item.text, parse_mode="HTML",
-                               reply_markup=taken_kb(item.passenger_id, url, item.style, item.source_url),
+                               reply_markup=taken_kb(item.passenger_id, url, item.style, item.source_url, item.order_no),
                                disable_web_page_preview=True)
 
     try:
