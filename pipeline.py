@@ -301,7 +301,10 @@ def taken_kb(passenger_id=None, url=None, style="default", source_url=None, orde
             rows.append([InlineKeyboardButton(text="🔗 Xabarga o'tish", url=source_url)])
         return InlineKeyboardMarkup(inline_keyboard=rows)
     if style == "donor":
-        rows = [[InlineKeyboardButton(text="👤 Клиент личкаси", url=url)]] if url else []
+        if order_no:                                # username yo'q: tugma bosilsa userbot mijozga yozadi
+            rows = [[InlineKeyboardButton(text="👤 Клиент личкаси", callback_data=f"oc:{order_no}")]]
+        else:
+            rows = [[InlineKeyboardButton(text="👤 Клиент личкаси", url=url)]] if url else []
         if source_url:                              # asl xabarga havola (donor tugmasi shu yerda ishlaydi)
             rows.append([InlineKeyboardButton(text="🔗 Xabarga o'tish", url=source_url)])
         rows.append([InlineKeyboardButton(text="✅ Buyurtmani oldim", callback_data=data)])

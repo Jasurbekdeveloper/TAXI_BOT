@@ -18,7 +18,7 @@ from services.donor_parser import DonorOrder
 log = logging.getLogger(__name__)
 
 
-def render(o: DonorOrder) -> str:
+def render(o: DonorOrder, order_no: int | None = None) -> str:
     e = html.escape
     lines = ["🚖 <b>Yangi mijoz aniqlandi!</b>",
              f"🆔 <b>User ID:</b> <code>{o.user_id}</code>" if o.user_id else "🆔 <b>User ID:</b> —"]
@@ -39,6 +39,8 @@ def render(o: DonorOrder) -> str:
     tag = route_hashtag(o.frm, o.to)
     if tag:
         lines.append(tag)
+    if order_no:                                # reply qilsa ham userbot mijozga yozadi
+        lines.append(f"#Order_{order_no}")
     return "\n".join(lines)
 
 
@@ -65,7 +67,17 @@ async def dispatch(o: DonorOrder, donor=None) -> str:
         crud.donor_forwarded(o.chat_id)
     stats["donor"] += 1
     log.info("[donor] %s → %s | uid=%s un=%s tel=%s", o.chat_id, target, o.user_id, o.username, o.phone)
-    await queue.put(Outgoing(render(o), key="donor:" + (keys[0] if keys else str(o.msg_id)),
+    order_no = None
+    if o.user_id and not o.username:            # username yo'q: «Клиент личкаси» userbot orqali yozadi
+        try:
+            from services import order_contact
+            owner = order_contact.active_owner()
+            if owner:
+                order_no = order_contact.save(o.user_id, None, owner, None)
+        except Exception as e:
+            log.warning("#Order (donor) saqlanmadi: %s", e)
+    await queue.put(Outgoing(render(o, order_no), key="donor:" + (keys[0] if keys else str(o.msg_id)),
+                             order_no=order_no,
                              contact_url=o.link, chat_id=target, style="donor", undo_keys=keys,
                              source_url=o.source_url,
                              # donorga guruh qattiq biriktirilmagan bo'lsa — yo'nalish bo'yicha qayta aniqlanadi
