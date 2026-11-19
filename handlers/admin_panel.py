@@ -46,6 +46,7 @@ class Adm(StatesGroup):
     bcast = State()
     donor_add = State()
     donor_target = State()
+    main_chat = State()
 
 
 def is_admin(user_id: int) -> bool:
@@ -433,6 +434,7 @@ SETTINGS = {
     "max_groups": ("Bitta haydovchi tanlay oladigan maks. guruhlar", 1, 50),
     "min_gap_sec": ("Guruhlar orasidagi minimal pauza (soniya)", 2, 120),
     "min_interval_min": ("Eng qisqa rassilka intervali (daqiqa)", 5, 240),
+    "order_ttl_hours": ("#Order mijoz ma'lumoti saqlanish muddati (soat)", 1, 72),
 }
 
 
@@ -441,10 +443,13 @@ def settings_view():
     lines = ["⚙️ <b>Tizim sozlamalari</b>", ""]
     for k, (title, _, _) in SETTINGS.items():
         lines.append(f"• {title}: <b>{crud.get_setting(k)}</b>")
+    src = "admin panel" if crud.get_setting("drivers_chat_id") else ".env"
+    lines.append(f"• Asosiy yopiq guruh: <code>{config.DRIVERS_CHAT_ID}</code> ({src})")
     gap = crud.get_setting("min_gap_sec")
     lines.append(f"\nGuruhlar orasida tasodifiy pauza: {gap}–{gap + 7} s")
     lines.append(f"🚨 Global Stop: <b>{'YOQILGAN' if stop else 'o‘chiq'}</b>")
     kb = [[B(text=f"✏️ {t[:40]}", callback_data=f"ap:set:{k}")] for k, (t, _, _) in SETTINGS.items()]
+    kb.append([B(text="🎯 Asosiy yopiq guruhni almashtirish", callback_data="ap:mainchat")])
     kb.append([B(text="✅ Global Stop'ni o'chirish" if stop else "🚨 Global Stop", callback_data="ap:gstop")])
     kb.append([BACK])
     return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=kb)
@@ -484,6 +489,38 @@ async def on_setting_value(msg: Message, state: FSMContext):
     await state.clear()
     text, kb = settings_view()
     await msg.answer("✅ Saqlandi\n\n" + text, parse_mode="HTML", reply_markup=kb)
+
+
+MAIN_CHAT_PROMPT = ("Yangi <b>asosiy yopiq guruh</b>ni yuboring. Yo'nalishi aniqlanmagan yoki guruh "
+                    "biriktirilmagan barcha e'lonlar shu yerga tushadi:\n"
+                    "• guruh <code>chat_id</code> si (guruhda /id yozib olinadi), yoki\n"
+                    "• o'sha guruhdan istalgan xabarni <b>forward</b> qiling, yoki\n"
+                    "• <code>0</code> — .env dagi DRIVERS_CHAT_ID ga qaytish (qayta ishga tushirgandan keyin)\n\n"
+                    "Bot guruhga a'zo bo'lishi kerak. Bekor: /cancel")
+
+
+@router.callback_query(F.data == "ap:mainchat")
+async def on_main_chat(cb: CallbackQuery, state: FSMContext):
+    await state.set_state(Adm.main_chat)
+    await cb.message.answer(MAIN_CHAT_PROMPT, parse_mode="HTML")
+    await cb.answer()
+
+
+@router.message(StateFilter(Adm.main_chat))
+async def on_main_chat_value(msg: Message, state: FSMContext, bot: Bot):
+    res = await _parse_chat(msg, bot)
+    if isinstance(res, str):
+        await msg.answer(res + "\nBekor: /cancel")
+        return
+    cid, title = res
+    crud.set_setting("drivers_chat_id", cid or 0)
+    if cid:
+        config.DRIVERS_CHAT_ID = cid        # darhol kuchga kiradi, qayta ishga tushirish shart emas
+    await state.clear()
+    text, kb = settings_view()
+    done = f"✅ Asosiy yopiq guruh: {html.escape(title)}" if cid else \
+        "✅ Admin sozlamasi o'chirildi. Botni qayta ishga tushirsangiz, .env dagi guruh ishlatiladi."
+    await msg.answer(done + "\n\n" + text, parse_mode="HTML", reply_markup=kb)
 
 
 @router.callback_query(F.data == "ap:gstop")

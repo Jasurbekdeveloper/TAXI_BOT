@@ -67,5 +67,7 @@ async def dispatch(o: DonorOrder, donor=None) -> str:
     log.info("[donor] %s → %s | uid=%s un=%s tel=%s", o.chat_id, target, o.user_id, o.username, o.phone)
     await queue.put(Outgoing(render(o), key="donor:" + (keys[0] if keys else str(o.msg_id)),
                              contact_url=o.link, chat_id=target, style="donor", undo_keys=keys,
-                             source_url=o.source_url))
+                             source_url=o.source_url,
+                             # donorga guruh qattiq biriktirilmagan bo'lsa — yo'nalish bo'yicha qayta aniqlanadi
+                             route=None if donor is not None and donor["target_chat_id"] else (o.frm, o.to)))
     return "sent"

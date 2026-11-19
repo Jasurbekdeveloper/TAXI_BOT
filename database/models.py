@@ -101,6 +101,8 @@ DEFAULT_SETTINGS = {
     "min_gap_sec": 5,           # guruhlar orasidagi minimal pauza (maksimal = min + 7)
     "min_interval_min": 15,     # haydovchi tanlay oladigan eng qisqa interval
     "global_stop": 0,           # 1 = hamma rassilka to'xtatilgan, yangisini ham yoqib bo'lmaydi
+    "order_ttl_hours": 3,
+    "drivers_chat_id": 0,       # asosiy yopiq guruh (admin paneldan). 0 = .env dagi DRIVERS_CHAT_ID       # username'siz mijoz ma'lumoti (#Order_N) necha soat saqlanadi
 }
 
 _conn: sqlite3.Connection | None = None

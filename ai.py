@@ -19,7 +19,7 @@ import config
 from nlp import normalize
 
 log = logging.getLogger(__name__)
-_limit = asyncio.Semaphore(3)       # katta guruhlarda bepul API limitiga urilmaslik uchun
+_limit = asyncio.Semaphore(5)       # katta guruhlarda bepul API limitiga urilmaslik uchun
 CACHE_TTL = 3600
 CACHE_MAX = 2000
 _cache: OrderedDict = OrderedDict()  # normallashtirilgan matn -> (vaqt, natija)
@@ -125,7 +125,7 @@ async def _chat(messages: list[dict]) -> str | None:
     if not backends:
         return None
     last_exc = None
-    async with _limit, httpx.AsyncClient(timeout=20) as c:
+    async with _limit, httpx.AsyncClient(timeout=httpx.Timeout(8, connect=4)) as c:
         for attempt in (1, 2):
             rate_limited = False
             for base, key, model in backends:

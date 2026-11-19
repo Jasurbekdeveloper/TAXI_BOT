@@ -125,8 +125,6 @@ def validate():
         errors.append(f"MODE bot, userbot yoki both bo'lishi kerak (hozir: {MODE!r})")
     if not BOT_TOKEN:
         errors.append("BOT_TOKEN bo'sh (@BotFather dan oling)")
-    if not DRIVERS_CHAT_ID:
-        errors.append("DRIVERS_CHAT_ID bo'sh (botni guruhga qo'shib, /id yozing)")
     if MODE in ("userbot", "both") and not (API_ID and API_HASH):
         errors.append("userbot rejimi uchun API_ID va API_HASH kerak (my.telegram.org)")
     if errors:

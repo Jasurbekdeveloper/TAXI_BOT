@@ -207,6 +207,12 @@ async def main():
         truststore.inject_into_ssl()
 
     crud.counts()                       # bazani ochadi, jadvallarni yaratadi, eski JSON'larni ko'chiradi
+    db_chat = crud.get_setting("drivers_chat_id")   # admin paneldan tanlangan asosiy guruh .env dan ustun
+    if db_chat:
+        config.DRIVERS_CHAT_ID = db_chat
+    if not config.DRIVERS_CHAT_ID:
+        raise SystemExit("Asosiy yopiq guruh yo'q: .env ga DRIVERS_CHAT_ID yozing "
+                         "(keyin /admin -> ⚙️ Tizim sozlamalari dan almashtirish mumkin)")
     bot = Bot(config.BOT_TOKEN)
     await preflight(bot)
     dp = Dispatcher()
