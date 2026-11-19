@@ -177,6 +177,7 @@ class Manager:
             user_name=f"{first} {last}".strip() or None,
             username=getattr(sender, "username", None), user_id=event.sender_id,
             phone=fmt_phone(getattr(sender, "phone", None)),        # profil raqami ochiq bo'lsa qo'shiladi
+            access_hash=getattr(sender, "access_hash", None), owner_id=self.tg_ids.get(uid),   # #Order uchun
         ))
 
     # ---------- guruhlar ----------

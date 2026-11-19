@@ -65,6 +65,10 @@ def _db() -> sqlite3.Connection:
         created     REAL NOT NULL,
         contacted   INTEGER DEFAULT 0)""")
     c.execute("CREATE INDEX IF NOT EXISTS ix_oc_created ON order_contacts(created)")
+    have = {r[1] for r in c.execute("PRAGMA table_info(order_contacts)")}
+    for col, typ in (("src_chat", "INTEGER"), ("src_username", "TEXT"), ("src_msg", "INTEGER"), ("snippet", "TEXT")):
+        if col not in have:                 # asl xabar: haydovchi akkaunti mijozni shu orqali «tanib oladi»
+            c.execute(f"ALTER TABLE order_contacts ADD COLUMN {col} {typ}")
     return c
 
 
@@ -112,32 +116,41 @@ async def remember(client: TelegramClient, event, sender=None) -> int | None:
     return save(sender.id, access_hash, me.id, name)
 
 
-def save(user_id: int, access_hash: int | None, owner_id: int, name: str | None = None) -> int:
+def save(user_id: int, access_hash: int | None, owner_id: int | None, name: str | None = None,
+         src_chat: int | None = None, src_username: str | None = None, src_msg: int | None = None,
+         snippet: str | None = None) -> int:
     """Yozuv qo'shadi va #Order raqamini qaytaradi. Shu mijozning muddati o'tmagan yozuvi bo'lsa — o'sha raqam."""
-    row = _conn.execute("SELECT order_no FROM order_contacts WHERE user_id=? AND owner_id=? AND created>? "
-                        "ORDER BY order_no DESC LIMIT 1", (user_id, owner_id, time.time() - ttl_sec())).fetchone()
+    owner_id = owner_id or 0
+    row = _conn.execute("SELECT order_no FROM order_contacts WHERE user_id=? AND created>? "
+                        "ORDER BY order_no DESC LIMIT 1", (user_id, time.time() - ttl_sec())).fetchone()
     if row:
-        _conn.execute("UPDATE order_contacts SET access_hash=COALESCE(?, access_hash), contacted=0 "
-                      "WHERE order_no=?", (access_hash, row[0]))
+        _conn.execute("UPDATE order_contacts SET access_hash=COALESCE(?, access_hash), owner_id=CASE WHEN ? "
+                      "THEN ? ELSE owner_id END, src_chat=COALESCE(?, src_chat), src_username=COALESCE(?, src_username),"
+                      " src_msg=COALESCE(?, src_msg), snippet=COALESCE(?, snippet), contacted=0 WHERE order_no=?",
+                      (access_hash, access_hash is not None, owner_id, src_chat, src_username, src_msg,
+                       (snippet or None) and snippet[:200], row[0]))
         return row[0]
     cur = _conn.execute(
-        "INSERT INTO order_contacts(user_id, access_hash, owner_id, name, created) VALUES (?,?,?,?,?)",
-        (user_id, access_hash, owner_id, (name or "")[:60], time.time()))
+        "INSERT INTO order_contacts(user_id, access_hash, owner_id, name, created, src_chat, src_username, src_msg,"
+        " snippet) VALUES (?,?,?,?,?,?,?,?,?)",
+        (user_id, access_hash, owner_id, (name or "")[:60], time.time(), src_chat, src_username, src_msg,
+         (snippet or "")[:200]))
     return cur.lastrowid
 
 
 def find(order_no: int):
-    row = _conn.execute(
-        "SELECT user_id, access_hash, owner_id, name, created, contacted FROM order_contacts WHERE order_no=?",
-        (order_no,)).fetchone()
+    cols = ("user_id", "access_hash", "owner_id", "name", "created", "contacted", "src_chat", "src_username",
+            "src_msg", "snippet")
+    row = _conn.execute(f"SELECT {', '.join(cols)} FROM order_contacts WHERE order_no=?", (order_no,)).fetchone()
     if not row or time.time() - row[4] > ttl_sec():
         return None
-    return dict(zip(("user_id", "access_hash", "owner_id", "name", "created", "contacted"), row))
+    return dict(zip(cols, row))
 
 
 # ---------- 3. Yuborish (istisnolar + anti-ban) ----------
-_send_lock = asyncio.Lock()                  # bir vaqtda faqat bitta shaxsiy xabar
-_sent_times: list[float] = []
+# Har bir akkauntning o'z navbati va soatlik limiti: haydovchilar bir-birini kutmaydi
+_locks: dict[int, asyncio.Lock] = {}
+_sent: dict[int, list[float]] = {}
 
 
 async def _resolve(client: TelegramClient, user_id: int, access_hash: int | None):
@@ -157,16 +170,41 @@ def driver_mention(driver) -> str:
     return f'<a href="tg://user?id={driver.id}">{name}</a>'
 
 
-async def send_dm(client: TelegramClient, user_id: int, access_hash: int | None, text: str) -> str:
+async def resolve_for(client: TelegramClient, rec: dict):
+    """Mijozni SHU akkaunt uchun topadi (access_hash har akkauntda boshqa):
+    1) saqlangan hash shu akkauntniki bo'lsa; 2) sessiya keshi; 3) asl xabarni shu akkaunt bilan o'qib olish."""
+    me = (await client.get_me()).id
+    if rec["access_hash"] is not None and rec["owner_id"] == me:
+        return InputPeerUser(rec["user_id"], rec["access_hash"])
+    try:
+        return await client.get_input_entity(rec["user_id"])
+    except (ValueError, PeerIdInvalidError):
+        pass
+    if rec.get("src_msg") and (rec.get("src_username") or rec.get("src_chat")):
+        try:
+            msg = await client.get_messages(rec["src_username"] or rec["src_chat"], ids=rec["src_msg"])
+            if msg is not None:
+                if msg.sender_id == rec["user_id"]:
+                    return await msg.get_input_sender()
+                return await client.get_input_entity(rec["user_id"])   # donor: mijoz tugma/havolada keldi
+        except Exception as e:
+            log.info("Asl xabar orqali topilmadi (user_id=%s): %s", rec["user_id"], e)
+    raise ValueError("entity not found")
+
+
+async def send_dm(client: TelegramClient, user_id: int, access_hash: int | None, text: str, peer=None) -> str:
     """Natija: ok | not_found | privacy | blocked | flood | limit | error"""
     try:
-        peer = await _resolve(client, user_id, access_hash)
+        peer = peer or await _resolve(client, user_id, access_hash)
     except (ValueError, PeerIdInvalidError) as e:
         # Akkaunt bu odamni hech qachon "ko'rmagan": u guruhda qayta yozganda remember() yangilaydi
         log.warning("Mijoz topilmadi (user_id=%s): %s", user_id, e)
         return "not_found"
 
-    async with _send_lock:
+    acc = id(client)
+    lock = _locks.setdefault(acc, asyncio.Lock())
+    _sent_times = _sent.setdefault(acc, [])
+    async with lock:
         now = time.time()
         _sent_times[:] = [t for t in _sent_times if now - t < 3600]
         if len(_sent_times) >= DM_PER_HOUR:
@@ -223,30 +261,46 @@ _REPLY.update({
     "expired": "⌛ Bu buyurtma eskirgan. Telefon raqami orqali bog'laning.",
     "already": "ℹ️ Bu mijozga allaqachon boshqa haydovchi orqali xabar yuborilgan.",
     "other_account": "⚠️ Bu mijozni boshqa userbot akkaunti ko'rgan, yozib bo'lmadi.",
-    "no_userbot": "⚠️ Userbot hozir ishlamayapti. Telefon raqami orqali bog'laning.",
+    "no_userbot": "⚠️ Akkauntingiz botga ulanmagan. Botda «🔐 Akkauntni ulash» ni bosing yoki telefon orqali bog'laning.",
+    "not_found_driver": "⚠️ Akkauntingiz mijozni topa olmadi: siz bu e'lon chiqqan guruhga a'zo emassiz. "
+                        "Telefon yoki «🔗 Xabarga o'tish» orqali bog'laning.",
+    "ok_driver": "✅ Mijozga sizning akkauntingizdan yozildi. Javobini o'z Telegramingizda ko'rasiz.",
 })
 
 
+DRIVER_DM_TEXT = ("Assalomu alaykum! Guruhdagi e'loningizni ko'rdim{snippet}.\n"
+                  "Men haydovchiman 🚕 Hali ham mashina kerakmi? Yo'nalish va vaqtni yozing.")
+
+
 async def contact(client: TelegramClient, order_no: int, driver_id: int, driver_username: str | None,
-                  driver_name: str | None) -> str:
-    """«💬 Yozish» tugmasi (username'siz mijoz): mijozga «haydovchi bog'lanmoqchi» deb yozadi. Natija kaliti _REPLY da."""
+                  driver_name: str | None, as_driver: bool = False) -> str:
+    """«💬 Yozish» / reply (username'siz mijoz). Natija kaliti _REPLY da.
+    as_driver=True — client haydovchining O'Z akkaunti: xabar haydovchi nomidan, oddiy suhbat sifatida ketadi.
+    as_driver=False — asosiy userbot: «haydovchi siz bilan bog'lanmoqchi» + haydovchiga havola."""
     rec = find(order_no)
     if not rec:
         return "expired"
-    if rec["owner_id"] != (await client.get_me()).id:
-        return "other_account"
     if rec["contacted"]:
         return "already"
-    if driver_username:
-        mention = f"@{driver_username}"
+    try:
+        peer = await resolve_for(client, rec)
+    except (ValueError, PeerIdInvalidError):
+        return "not_found_driver" if as_driver else "not_found"
+    if as_driver:
+        snip = rec.get("snippet")
+        text = DRIVER_DM_TEXT.format(snippet=f": «{html.escape(snip[:120])}»" if snip else "")
     else:
-        try:                                # mention ishlashi uchun userbot haydovchini tanishi kerak
-            await client.get_input_entity(driver_id)
-            mention = f'<a href="tg://user?id={driver_id}">{html.escape(driver_name or "Haydovchi")}</a>'
-        except (ValueError, PeerIdInvalidError):
-            mention = html.escape(driver_name or "Haydovchi")
+        if driver_username:
+            mention = f"@{driver_username}"
+        else:
+            try:                            # mention ishlashi uchun userbot haydovchini tanishi kerak
+                await client.get_input_entity(driver_id)
+                mention = f'<a href="tg://user?id={driver_id}">{html.escape(driver_name or "Haydovchi")}</a>'
+            except (ValueError, PeerIdInvalidError):
+                mention = html.escape(driver_name or "Haydovchi")
+        text = DM_TEXT.format(driver=mention)
     _conn.execute("UPDATE order_contacts SET contacted=1 WHERE order_no=?", (order_no,))   # ikki haydovchi bossa ham bir marta
-    res = await send_dm(client, rec["user_id"], rec["access_hash"], DM_TEXT.format(driver=mention))
+    res = await send_dm(client, rec["user_id"], None, text, peer=peer)
     if res != "ok":
         _conn.execute("UPDATE order_contacts SET contacted=0 WHERE order_no=?", (order_no,))
     return res
@@ -261,38 +315,11 @@ def active_owner() -> int | None:
     return _active["owner_id"]
 
 
-def register(client: TelegramClient, closed_chat_ids):
-    """Yopiq guruhlarda haydovchi #Order_N e'longa reply qilsa — mijozga yozadi.
-    closed_chat_ids: chaqiriladigan funksiya (ro'yxat ish davomida o'zgaradi)."""
+def register(client: TelegramClient, closed_chat_ids=None):
+    """Asosiy userbotni #Order uchun belgilaydi. Haydovchi reply'larini bot o'zi ushlaydi (main.py),
+    shunda xabar haydovchining O'Z akkauntidan ketadi."""
 
     async def _set_owner():
         _active["owner_id"] = (await client.get_me()).id
 
     client.loop.create_task(_set_owner())
-    owner = {"id": None}
-
-    @client.on(events.NewMessage(incoming=True))
-    async def on_driver_reply(event):
-        if event.chat_id not in closed_chat_ids():
-            return
-        order_no = await _order_no_from(event)
-        if not order_no:
-            return
-        if owner["id"] is None:
-            owner["id"] = (await client.get_me()).id
-        rec = find(order_no)
-        if not rec:
-            await event.reply(f"⌛ #Order_{order_no} eskirgan yoki topilmadi.")
-            return
-        if rec["owner_id"] != owner["id"]:          # access_hash boshqa akkauntniki
-            return
-        if rec["contacted"]:
-            await event.reply("ℹ️ Bu mijozga allaqachon xabar yuborilgan.")
-            return
-        driver = await event.get_sender()
-        res = await send_dm(client, rec["user_id"], rec["access_hash"], DM_TEXT.format(driver=driver_mention(driver)))
-        if res == "ok":
-            _conn.execute("UPDATE order_contacts SET contacted=1 WHERE order_no=?", (order_no,))
-        await event.reply(_REPLY[res])
-
-    client.loop.create_task(purge_loop())

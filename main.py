@@ -41,9 +41,15 @@ _TAKEN_LIMIT = 5000
 # ---------- 1-rejim: bot guruhlarda a'zo ----------
 @router.message(F.chat.type.in_({"group", "supergroup"}), F.text | F.caption)
 async def on_group_message(msg: Message, bot: Bot):
-    if config.MODE == "userbot" or (msg.from_user and msg.from_user.is_bot):
+    if msg.from_user and msg.from_user.is_bot:
         return
-    if msg.chat.id in routes.closed_chat_ids() or (msg.text or "").startswith("/"):
+    if msg.chat.id in routes.closed_chat_ids():
+        if msg.reply_to_message is not None:    # haydovchi #Order e'loniga reply qildi (har qanday rejimda)
+            await on_order_reply(msg, bot)
+        return
+    if config.MODE == "userbot":
+        return
+    if (msg.text or "").startswith("/"):
         return
     if not store.find(msg.chat.id, msg.chat.username, msg.chat.title):
         return
@@ -129,23 +135,46 @@ async def on_take(cb: CallbackQuery, bot: Bot):
         await cb.answer(url=chat_url)
 
 
-# ---------- «💬 Yozish»: username'siz mijozga userbot orqali ----------
-@router.callback_query(F.data.regexp(r"^oc:\d+$"))
-async def on_order_contact(cb: CallbackQuery, bot: Bot):
-    client = admin.userbot
-    if client is None:
-        await cb.answer(order_contact._REPLY["no_userbot"], show_alert=True)
-        return
-    await cb.answer("⏳ Mijozga xabar yuborilmoqda...")
-    who = cb.from_user
-    res = await order_contact.contact(client, int(cb.data[3:]), who.id, who.username, who.full_name)
+# ---------- «💬 Yozish» / reply: username'siz mijozga yozish ----------
+async def _contact_flow(bot: Bot, who, order_no: int, reply_to: Message | None):
+    """Avval haydovchining O'Z ulangan akkauntidan yozadi (yuk akkauntlar orasida bo'linadi).
+    Akkaunt ulanmagan yoki mijozni topa olmasa — asosiy userbot «haydovchi bog'lanmoqchi» deb yozadi."""
+    name = " ".join(x for x in (who.first_name, who.last_name) if x) or None
+    res = "no_userbot"
+    own = manager.clients.get(who.id)
+    if own is not None:
+        res = await order_contact.contact(own, order_no, who.id, who.username, name, as_driver=True)
+        if res == "ok":
+            res = "ok_driver"
+    if res in ("no_userbot", "not_found_driver") and admin.userbot is not None:
+        fallback = await order_contact.contact(admin.userbot, order_no, who.id, who.username, name)
+        if fallback == "ok" or res == "no_userbot":
+            res = fallback
     text = order_contact._REPLY[res]
     try:                                    # natija haydovchiga shaxsan (botni ochgan bo'lsa)
         await bot.send_message(who.id, text)
     except AiogramError:                    # bo'lmasa guruhda e'longa javob qilib
-        name = f"@{who.username}" if who.username else html.escape(who.full_name)
-        if isinstance(cb.message, Message):
-            await cb.message.reply(f"{name}: {text}", parse_mode="HTML")
+        if reply_to is not None:
+            mention = f"@{who.username}" if who.username else html.escape(who.full_name)
+            await reply_to.reply(f"{mention}: {html.escape(text)}", parse_mode="HTML")
+
+
+@router.callback_query(F.data.regexp(r"^oc:\d+$"))
+async def on_order_contact(cb: CallbackQuery, bot: Bot):
+    await cb.answer("⏳ Mijozga xabar yuborilmoqda...")
+    await _contact_flow(bot, cb.from_user, int(cb.data[3:]),
+                        cb.message if isinstance(cb.message, Message) else None)
+
+
+async def on_order_reply(msg: Message, bot: Bot):
+    """Haydovchi yopiq guruhda bot e'loniga (#Order_N) reply qildi. Bot o'z xabariga reply'larni har doim ko'radi."""
+    r = msg.reply_to_message
+    if msg.chat.id not in routes.closed_chat_ids() or not (r.from_user and r.from_user.id == bot.id):
+        return
+    m = order_contact.ORDER_RE.search(r.text or r.caption or "")
+    if not m or not msg.from_user:
+        return
+    await _contact_flow(bot, msg.from_user, int(m.group(1)), msg)
 
 
 # ---------- 2-rejim: userbot (Telethon) ----------
@@ -249,6 +278,7 @@ async def main():
     await manager.start(bot)            # haydovchi akkauntlarini ulaydi, to'xtamagan rassilkalarni davom ettiradi
     polling = asyncio.create_task(dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types()))
     tasks = [polling, asyncio.create_task(sender(bot))]
+    asyncio.create_task(order_contact.purge_loop())     # #Order yozuvlari muddati o'tgach o'chiriladi (har rejimda)
     if config.MODE in ("userbot", "both"):
         tasks.append(asyncio.create_task(run_userbot()))
 

@@ -71,9 +71,8 @@ async def dispatch(o: DonorOrder, donor=None) -> str:
     if o.user_id and not o.username:            # username yo'q: «Клиент личкаси» userbot orqali yozadi
         try:
             from services import order_contact
-            owner = order_contact.active_owner()
-            if owner:
-                order_no = order_contact.save(o.user_id, None, owner, None)
+            order_no = order_contact.save(o.user_id, None, order_contact.active_owner(), None,
+                                          src_chat=o.chat_id, src_msg=o.msg_id, snippet=(o.text or "")[:200])
         except Exception as e:
             log.warning("#Order (donor) saqlanmadi: %s", e)
     await queue.put(Outgoing(render(o, order_no), key="donor:" + (keys[0] if keys else str(o.msg_id)),
