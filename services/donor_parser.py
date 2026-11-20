@@ -189,7 +189,10 @@ def extract(message, chat_id: int, sender=None) -> DonorOrder:
         username = getattr(sender, "username", None)
 
     p = analyze(raw)
-    phone = find_phone(raw) or fmt_phone(getattr(sender, "phone", None))     # matnda yo'q bo'lsa profil raqami
+    # User ID (9–10 raqam) telefon deb olinmasin: "User ID: 883388291" -> "+998 88 338 82 91" xatosi
+    ph_src = re.sub(rf"(?<!\d){user_id}(?!\d)", " ", raw) if user_id else raw
+    ph_src = "\n".join(ln for ln in ph_src.splitlines() if not ID_LINE_RE.match(ln))
+    phone = find_phone(ph_src) or fmt_phone(getattr(sender, "phone", None))     # matnda yo'q bo'lsa profil raqami
     text = tidy(raw) or clean_text(raw)      # "o'z formatimizga": imzo/reklama/telefon/emoji devori tozalanadi
     return DonorOrder(chat_id=chat_id, msg_id=getattr(message, "id", 0), text=text, raw=raw,
                       user_id=user_id, username=username, phone=phone, urls=urls, frm=p.frm, to=p.to,

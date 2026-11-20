@@ -68,7 +68,7 @@ async def dispatch(o: DonorOrder, donor=None) -> str:
     stats["donor"] += 1
     log.info("[donor] %s → %s | uid=%s un=%s tel=%s", o.chat_id, target, o.user_id, o.username, o.phone)
     order_no = None
-    if o.user_id and not o.username:            # username yo'q: «Клиент личкаси» userbot orqali yozadi
+    if o.user_id and not o.username:            # username yo'q: havola rad etilsa — #Order orqali yoziladi
         try:
             from services import order_contact
             order_no = order_contact.save(o.user_id, None, order_contact.active_owner(), None,

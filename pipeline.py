@@ -286,35 +286,37 @@ async def process(m: Incoming) -> str | None:
         except Exception as e:                  # #Order ishlamasa ham e'lon yo'qolmasin
             log.warning("#Order saqlanmadi: %s", e)
     await queue.put(Outgoing(render(m, frm, to, seats, when, phone, order_no), key,
-                             contact_url=None if order_no else url, order_no=order_no,
+                             contact_url=url, order_no=order_no,
                              chat_id=routes.target_chat(frm, to), source_url=source_link(m), route=(frm, to)))
     return label
 
 
 def taken_kb(passenger_id=None, url=None, style="default", source_url=None, order_no=None):
+    """Bog'lanish tugmasi bitta: avval to'g'ridan-to'g'ri havola (username yoki donor tugmasining asl URL'i —
+    donor botida ishlagani kabi profil ochiladi). Havola yo'q yoki Telegram uni maxfiylik sababli rad etsa
+    (_deliver url=None bilan qayta yuboradi) — #Order: bosilsa haydovchi akkaunti/userbot mijozga yozadi."""
     data = f"take:{passenger_id}" if passenger_id else "take"
-    if order_no and style != "donor":       # username yo'q: bitta tugma — bosilsa userbot mijozga yozadi
-        row = [InlineKeyboardButton(text="✅ Oldim", callback_data=data),
-               InlineKeyboardButton(text="💬 Yozish", callback_data=f"oc:{order_no}")]
-        rows = [row]
-        if source_url:
-            rows.append([InlineKeyboardButton(text="🔗 Xabarga o'tish", url=source_url)])
-        return InlineKeyboardMarkup(inline_keyboard=rows)
-    if style == "donor":
-        if order_no:                                # username yo'q: tugma bosilsa userbot mijozga yozadi
-            rows = [[InlineKeyboardButton(text="👤 Клиент личкаси", callback_data=f"oc:{order_no}")]]
-        else:
-            rows = [[InlineKeyboardButton(text="👤 Клиент личкаси", url=url)]] if url else []
-        if source_url:                              # asl xabarga havola (donor tugmasi shu yerda ishlaydi)
-            rows.append([InlineKeyboardButton(text="🔗 Xabarga o'tish", url=source_url)])
+    donor = style == "donor"
+    label = "👤 Клиент личкаси" if donor else "💬 Yozish"
+    if url:
+        contact = InlineKeyboardButton(text=label, url=url)
+    elif order_no:
+        contact = InlineKeyboardButton(text=label, callback_data=f"oc:{order_no}")
+    else:
+        contact = None
+    link = [InlineKeyboardButton(text="🔗 Xabarga o'tish", url=source_url)] if source_url else None
+    if donor:
+        rows = [[contact]] if contact else []
+        if link:
+            rows.append(link)
         rows.append([InlineKeyboardButton(text="✅ Buyurtmani oldim", callback_data=data)])
         return InlineKeyboardMarkup(inline_keyboard=rows)
     row = [InlineKeyboardButton(text="✅ Oldim", callback_data=data)]
-    if url:
-        row.append(InlineKeyboardButton(text="💬 Yozish", url=url))
+    if contact:
+        row.append(contact)
     rows = [row]
-    if source_url:                                  # t.me havola tugmasi hech qachon rad etilmaydi
-        rows.append([InlineKeyboardButton(text="🔗 Xabarga o'tish", url=source_url)])
+    if link:                                        # t.me havola tugmasi hech qachon rad etilmaydi
+        rows.append(link)
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
