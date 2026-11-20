@@ -59,6 +59,8 @@ class DonorOrder:
     to: str | None = None
     btn_url: str | None = None                   # donor xabaridagi «Клиент личкаси» tugmasining asl URL'i
     source_title: str | None = None              # qaysi donor guruhdan olingani
+    profile_phone: str | None = None             # mijozning Telegram profilidagi raqami (ochiq bo'lsa)
+    name: str | None = None                      # mijozning Telegram ismi
 
     @property
     def link(self) -> str | None:
@@ -341,6 +343,16 @@ async def handle(event, exclude_sender_ids=()) -> str:
         un = await _resolve_username(event, order.user_id)
         if un:
             order.username = un
+    if order.user_id:                                    # darhol: profil raqami / ism / username (o'qigan akkaunt orqali)
+        try:
+            from services import enrich
+            readers = [getattr(event, "client", None)] if getattr(event, "client", None) else []
+            info = await enrich.lookup(order.user_id, clients=readers + enrich._clients_for(None))
+        except Exception:
+            info = {}
+        order.username = order.username or info.get("username")
+        order.profile_phone = info.get("phone")
+        order.name = info.get("name")
     # Diagnostika: donor qanday kontakt havolasi berganini ko'rsatadi (link chiqmasa sababini bilish uchun).
     # mention=True — mijoz xabarda haqiqiy ishora (MentionName) bilan; min-user aniqlash shunda mumkin.
     ents = getattr(message, "entities", None) or []

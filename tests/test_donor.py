@@ -134,10 +134,10 @@ def test_handle_dispatch_dedup_and_driver_skip(env):
     e1 = event(t, 1, [ent_url(t, "Клиент личкаси", "tg://user?id=5551234")])
     assert asyncio.run(env.dp.handle(e1)) == "sent"
     item = env.q.get_nowait()
-    assert item.chat_id == -1009999 and item.style == "donor" and item.contact_url == "tg://user?id=5551234"
+    assert item.chat_id == -1009999 and item.style == "donor" and item.contact_url is None
     assert item.source_url == "https://t.me/c/500/1"           # asl xabarga havola (Manba)
-    assert "Yangi mijoz aniqlandi!" in item.text and "<code>5551234</code>" in item.text
-    assert '<a href="tg://user?id=5551234">Клиент личкаси</a>' in item.text and "#Denov_Samarqand" in item.text
+    assert "YO'LOVCHI" in item.text and "#Denov_Samarqand" in item.text     # yagona format (services/card.py)
+    assert "#Order_" in item.text and item.order_no                           # username yo'q: «💬 Yozish» qidiradi
     assert "Manba" not in item.text                            # xunuk chat_id qatori yo'q (tugma yetarli)
     assert asyncio.run(env.dp.handle(e1)) == "seen"                     # bir xabarni ikki akkaunt ko'rdi
     e2 = event("Yana Denovdan taksi kerak", 2, buttons=[[{"text": "Lichka", "url": "tg://user?id=5551234"}]])

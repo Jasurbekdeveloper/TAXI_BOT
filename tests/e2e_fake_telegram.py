@@ -840,9 +840,9 @@ async def run():
     res_ = await _dp.handle(dev(t_, 1, [ent])); await asyncio.sleep(.3); r = new()
     out = [x for x in r if str(x[0]) == "-1009999"]
     check("donor: mijoz yopiq guruhga yashirin havola va tugma bilan uzatildi",
-          res_ == "sent" and out and "Yangi mijoz aniqlandi!" in out[-1][1] and "<code>5551234</code>" in out[-1][1]
-          and 'href="tg://user?id=5551234"' in out[-1][1] and "obuna" not in out[-1][1]
-          and "tg://user?id=5551234" in markups[-1][1] and "take" in markups[-1][1], (res_, r, markups[-1:]))
+          res_ == "sent" and out and "YO'LOVCHI" in out[-1][1] and "#Order_" in out[-1][1]
+          and "obuna" not in out[-1][1]
+          and "oc:" in markups[-1][1] and "take" in markups[-1][1], (res_, r, markups[-1:]))
     check("donor: bir xil mijoz 30 daqiqada qayta uzatilmaydi",
           await _dp.handle(dev("Denovdan yana taksi kerak", 2,
                                buttons=[[{"text": "Lichka", "url": "tg://user?id=5551234"}]])) == "dup")

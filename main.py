@@ -136,51 +136,69 @@ async def on_take(cb: CallbackQuery, bot: Bot):
 
 
 # ---------- «💬 Yozish» / reply: username'siz mijozga yozish ----------
-async def _contact_flow(bot: Bot, who, order_no: int, reply_to: Message | None):
-    """Avval haydovchining O'Z ulangan akkauntidan yozadi (yuk akkauntlar orasida bo'linadi).
-    Akkaunt ulanmagan yoki mijozni topa olmasa — asosiy userbot «haydovchi bog'lanmoqchi» deb yozadi."""
-    name = " ".join(x for x in (who.first_name, who.last_name) if x) or None
-    own = manager.clients.get(who.id)
-    # 1) Mijozda username bo'lsa — xabar yozmaymiz, tugmani to'g'ridan-to'g'ri lichka havolasiga aylantiramiz
-    for client in (own, admin.userbot):
-        if client is None:
-            continue
-        username = await order_contact.lookup_username(client, order_no)
-        if username:
-            url = f"https://t.me/{username}"
-            ad = reply_to.reply_to_message if (reply_to is not None and reply_to.reply_to_message) else reply_to
-            if ad is not None and ad.reply_markup:
-                rows = [[InlineKeyboardButton(text=b.text, url=url) if b.callback_data == f"oc:{order_no}" else b
-                         for b in row] for row in ad.reply_markup.inline_keyboard]
-                try:
-                    await ad.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
-                except AiogramError:
-                    pass
-            text = f"👤 Mijoz lichkasi: @{username}\nTugma endi to'g'ridan-to'g'ri lichkani ochadi."
-            try:
-                await bot.send_message(who.id, text)
-            except AiogramError:
-                if reply_to is not None:
-                    mention = f"@{who.username}" if who.username else html.escape(who.full_name)
-                    await reply_to.reply(f"{mention}: {html.escape(text)}", parse_mode="HTML")
-            return
-    # 2) Username yo'q — mijozga xabar yoziladi
-    res = "no_userbot"
-    if own is not None:
-        res = await order_contact.contact(own, order_no, who.id, who.username, name, as_driver=True)
-        if res == "ok":
-            res = "ok_driver"
-    if res in ("no_userbot", "not_found_driver") and admin.userbot is not None:
-        fallback = await order_contact.contact(admin.userbot, order_no, who.id, who.username, name)
-        if fallback == "ok" or res == "no_userbot":
-            res = fallback
-    text = order_contact._REPLY[res]
+async def _tell_driver(bot: Bot, who, text: str, reply_to: Message | None):
     try:                                    # natija haydovchiga shaxsan (botni ochgan bo'lsa)
-        await bot.send_message(who.id, text)
+        await bot.send_message(who.id, text, parse_mode="HTML")
     except AiogramError:                    # bo'lmasa guruhda e'longa javob qilib
         if reply_to is not None:
             mention = f"@{who.username}" if who.username else html.escape(who.full_name)
-            await reply_to.reply(f"{mention}: {html.escape(text)}", parse_mode="HTML")
+            await reply_to.reply(f"{mention}: {text}", parse_mode="HTML")
+
+
+async def _mark_ad(ad: Message | None, line: str | None = None, url: str | None = None, order_no: int | None = None):
+    """E'lonni yangilaydi: holat qatori qo'shadi va/yoki «💬 Yozish» ni lichka havolasiga aylantiradi."""
+    if ad is None:
+        return
+    kb = ad.reply_markup
+    if url and kb:
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💬 Lichkaga yozish", url=url) if b.callback_data == f"oc:{order_no}" else b
+             for b in row]
+            for row in kb.inline_keyboard])
+    try:
+        if line:
+            await ad.edit_text(ad.html_text + "\n" + line, parse_mode="HTML", reply_markup=kb,
+                               disable_web_page_preview=True)
+        elif url:
+            await ad.edit_reply_markup(reply_markup=kb)
+    except AiogramError:
+        pass
+
+
+async def _contact_flow(bot: Bot, who, order_no: int, reply_to: Message | None):
+    """«💬 Yozish» (username'siz mijoz). Har bir akkaunt mijozni shu tartibda qidiradi (order_contact.resolve_for):
+    matndagi raqam → Telegram (asl xabar) → profildagi raqam.
+    1) Haydovchining O'Z akkaunti — topsa: username bo'lsa lichka havolasi, bo'lmasa o'z nomidan yozadi.
+    2) Topolmasa — asosiy userbot «haydovchi bog'lanmoqchi» deb yozadi (e'londa 🤖 belgisi bilan)."""
+    ad = reply_to.reply_to_message if (reply_to is not None and reply_to.reply_to_message) else reply_to
+    name = " ".join(x for x in (who.first_name, who.last_name) if x) or None
+    mention = f"@{who.username}" if who.username else html.escape(who.full_name)
+    res, username, via = "no_userbot", None, None
+    own = manager.clients.get(who.id)
+    if own is not None:
+        res, username = await order_contact.reach(own, order_no, who.id, who.username, name, as_driver=True)
+        via = "driver"
+    if res in ("no_userbot", "not_found_driver") and admin.userbot is not None:
+        r2, u2 = await order_contact.reach(admin.userbot, order_no, who.id, who.username, name)
+        if r2 in ("ok", "username") or res == "no_userbot":
+            res, username, via = r2, u2, "userbot"
+
+    if res == "username":
+        url = f"https://t.me/{username}"
+        await _mark_ad(ad, "🟢 Lichka topildi: @" + html.escape(username), url=url, order_no=order_no)
+        await _tell_driver(bot, who, f"👤 Mijoz lichkasi: @{html.escape(username)}\n"
+                                     "E'londagi tugma endi «💬 Lichkaga yozish» — lichkani to'g'ridan-to'g'ri ochadi.", reply_to)
+        return
+    if res == "ok":
+        if via == "driver":
+            await _mark_ad(ad, f"✍️ {mention} mijozga o'z akkauntidan yozdi")
+            text = order_contact._REPLY["ok_driver"]
+        else:
+            await _mark_ad(ad, f"🤖 {mention} uchun bot mijozga yozdi (mijoz sizga javob beradi)")
+            text = order_contact._REPLY["ok"]
+    else:
+        text = order_contact._REPLY.get(res, order_contact._REPLY["error"])
+    await _tell_driver(bot, who, html.escape(text), reply_to)
 
 
 @router.callback_query(F.data.regexp(r"^oc:\d+$"))

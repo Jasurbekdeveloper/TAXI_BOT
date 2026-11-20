@@ -135,43 +135,18 @@ def _repost_name(text: str) -> str | None:
     return None
 
 
-def render(m: Incoming, frm, to, seats, when, phone, order_no: int | None = None) -> str:
-    e = html.escape
-    route = " → ".join(e(x) for x in (frm, to) if x) if (frm and to) else (
-        f"{e(frm)} →" if frm else f"→ {e(to)}" if to else "")
+def render(m: Incoming, frm, to, seats, when, phone, order_no: int | None = None,
+           text_phone=None, profile_phone=None, username: str | None = None) -> str:
+    """Yagona format (services/card.py) — donor e'lonlari bilan bir xil."""
+    from services.card import render_card
+    if text_phone is None and profile_phone is None:
+        text_phone = phone
     rid = repost_user_id(m.text)
-    uid = rid or (m.user_id if (m.user_id and m.user_id > 0) else None)
-    lines = ["🧍 <b>YO'LOVCHI</b>"]
-    if uid:
-        lines.append(f"🆔 <code>{uid}</code>")
-    if route:
-        lines.append(f"📍 {route}")
-    if when:
-        lines.append(f"🕕 {e(str(when))}")
-    if seats:
-        lines.append(f"👥 {seats} kishi")
-    if phone:
-        lines.append(f"📞 {e(tel(phone))}")     # bo'shliqsiz — bosib qo'ng'iroq qilish uchun
-    if rid:                                     # boshqa bot qayta joylagan: profil — asl mijozniki
-        lines.append(f'👤 <a href="tg://user?id={rid}">{e(_repost_name(m.text) or "Mijoz profili")}</a>')
-    elif m.username:
-        lines.append(f"👤 @{e(m.username)}")
-    elif m.user_id and m.user_id > 0:
-        lines.append(f'👤 <a href="tg://user?id={m.user_id}">{e(m.user_name or "Profil")}</a>')
-    if not m.username and uid and source_link(m) and not order_no:
-        # username yo'q: tg://user havolasi ko'pincha bosilmaydi — asl xabardan ismiga bosib yoziladi
-        lines.append("ℹ️ <i>Lichka: «🔗 Xabarga o'tish» → ismiga bosing → «Xabar yozish»</i>")
-    snippet = tidy(m.text) or clean_text(m.text)[:400]
-    lines.append(f"\n💬 <i>{e(snippet)}</i>")
-    link = source_link(m)
-    src = f'<a href="{link}">{e(m.chat_title)}</a>' if link else e(m.chat_title)
-    lines.append(f"🔗 {src}")
-    tag = route_hashtag(frm, to)
-    if tag:
-        lines.append(tag)
-    if order_no:                                # haydovchi shu e'longa reply qilsa, userbot mijozga yozadi
-        lines.append(f"#Order_{order_no}")
-    return "\n".join(lines)
+    name = (_repost_name(m.text) if rid else None) or m.user_name
+    return render_card(frm=frm, to=to, when=when, seats=seats, text_phone=text_phone, profile_phone=profile_phone,
+                       name=name, username=username or (None if rid else m.username),
+                       text=tidy(m.text) or clean_text(m.text)[:400], source_title=m.chat_title,
+                       source_url=source_link(m), order_no=order_no)
 
 
 def render_order(user_id, username, full_name, d: dict) -> str:
@@ -273,50 +248,54 @@ async def process(m: Incoming) -> str | None:
     if is_duplicate(key):
         stats["dup"] += 1
         return label
-    rid = repost_user_id(m.text)                # bot qayta joylagan bo'lsa, "Yozish" asl mijozga ochilsin
-    url = contact_url(None, rid) if rid else contact_url(m.username, m.user_id)
+    rid = repost_user_id(m.text)                # bot qayta joylagan bo'lsa — mijoz matndagi User ID
+    username = None if rid else m.username
+    client_id = rid or (m.user_id if (m.user_id and m.user_id > 0) else None)
+    if client_id and not username:              # darhol: mijoz profilidan username / raqam / ism
+        try:
+            from services import enrich
+            info = await enrich.lookup(client_id, None if rid else m.owner_id, None if rid else m.access_hash)
+        except Exception as e:
+            info = {}
+            log.info("Profil ma'lumoti olinmadi: %s", e)
+        username = info.get("username")
+        if info.get("phone") and not m.phone and not rid:
+            m.phone = info["phone"]
+        if info.get("name") and not m.user_name:
+            m.user_name = info["name"]
+        if rid and info.get("phone"):
+            m.phone = info["phone"]
+        phone = p.phone or m.phone
+    url = f"https://t.me/{username}" if username else None      # tg://user tugmalari ishlatilmaydi (rad etiladi)
     order_no = None
-    if m.user_id and m.user_id > 0 and not m.username and not rid:   # username'siz mijoz: #Order tizimi
+    if not username and (client_id or phone):   # username yo'q: «💬 Yozish» bosilsa bot mijozni qidiradi
         try:
             from services import order_contact
-            # access_hash bo'lmasa ham saqlanadi: tugma bosgan haydovchi akkaunti mijozni asl xabardan topadi
-            order_no = order_contact.save(m.user_id, m.access_hash, m.owner_id or order_contact.active_owner(),
-                                          m.user_name, src_chat=m.chat_id, src_username=m.chat_username,
-                                          src_msg=m.msg_id, snippet=(tidy(m.text) or m.text)[:200], phone=phone)
+            order_no = order_contact.save(
+                client_id, None if rid else m.access_hash, None if rid else (m.owner_id or order_contact.active_owner()),
+                m.user_name, src_chat=m.chat_id, src_username=m.chat_username, src_msg=m.msg_id,
+                snippet=(tidy(m.text) or m.text)[:200], phone=p.phone, profile_phone=m.phone)
         except Exception as e:                  # #Order ishlamasa ham e'lon yo'qolmasin
             log.warning("#Order saqlanmadi: %s", e)
-    await queue.put(Outgoing(render(m, frm, to, seats, when, phone, order_no), key,
+    await queue.put(Outgoing(render(m, frm, to, seats, when, phone, order_no, text_phone=p.phone,
+                                    profile_phone=m.phone, username=username), key,
                              contact_url=url, order_no=order_no,
                              chat_id=routes.target_chat(frm, to), source_url=source_link(m), route=(frm, to)))
     return label
 
 
 def taken_kb(passenger_id=None, url=None, style="default", source_url=None, order_no=None):
-    """Bog'lanish tugmasi bitta: avval to'g'ridan-to'g'ri havola (username yoki donor tugmasining asl URL'i —
-    donor botida ishlagani kabi profil ochiladi). Havola yo'q yoki Telegram uni maxfiylik sababli rad etsa
-    (_deliver url=None bilan qayta yuboradi) — #Order: bosilsa haydovchi akkaunti/userbot mijozga yozadi."""
+    """Hamma e'lon uchun bir xil, sodda tugmalar:  [✅ Oldim] [💬 Yozish]  /  [🔗 Xabarga o'tish]
+    «💬 Yozish»: username bo'lsa t.me havolasi (lichka darhol ochiladi), bo'lmasa bot mijozni qidiradi (#Order)."""
     data = f"take:{passenger_id}" if passenger_id else "take"
-    donor = style == "donor"
-    label = "👤 Клиент личкаси" if donor else "💬 Yozish"
-    if url:
-        contact = InlineKeyboardButton(text=label, url=url)
-    elif order_no:
-        contact = InlineKeyboardButton(text=label, callback_data=f"oc:{order_no}")
-    else:
-        contact = None
-    link = [InlineKeyboardButton(text="🔗 Xabarga o'tish", url=source_url)] if source_url else None
-    if donor:
-        rows = [[contact]] if contact else []
-        if link:
-            rows.append(link)
-        rows.append([InlineKeyboardButton(text="✅ Buyurtmani oldim", callback_data=data)])
-        return InlineKeyboardMarkup(inline_keyboard=rows)
     row = [InlineKeyboardButton(text="✅ Oldim", callback_data=data)]
-    if contact:
-        row.append(contact)
+    if url and (not url.startswith("tg://") or passenger_id):   # bot buyurtmasi: mijoz botni ochgan, tg:// ishlaydi
+        row.append(InlineKeyboardButton(text="💬 Lichkaga yozish", url=url))      # o'zi to'g'ridan-to'g'ri yozadi
+    elif order_no:
+        row.append(InlineKeyboardButton(text="🤖 Bot orqali yozish", callback_data=f"oc:{order_no}"))
     rows = [row]
-    if link:                                        # t.me havola tugmasi hech qachon rad etilmaydi
-        rows.append(link)
+    if source_url:                                  # t.me havola tugmasi hech qachon rad etilmaydi
+        rows.append([InlineKeyboardButton(text="🔗 Xabarga o'tish", url=source_url)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

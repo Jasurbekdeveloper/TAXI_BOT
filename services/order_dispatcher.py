@@ -19,29 +19,11 @@ log = logging.getLogger(__name__)
 
 
 def render(o: DonorOrder, order_no: int | None = None) -> str:
-    e = html.escape
-    lines = ["🚖 <b>Yangi mijoz aniqlandi!</b>",
-             f"🆔 <b>User ID:</b> <code>{o.user_id}</code>" if o.user_id else "🆔 <b>User ID:</b> —"]
-    if o.frm or o.to:
-        lines.append(f"📍 {e(o.frm or '?')} → {e(o.to or '?')}")
-    lines += ["", f"📝 <b>Xabar:</b> {e(o.text)}",
-              f"📞 <b>Tel:</b> {e(tel(o.phone)) if o.phone else 'koʻrsatilmagan'}"]   # bo'shliqsiz — bosib qo'ng'iroq
-    if o.link:
-        link = e(o.link, quote=True)
-        lines += ["", f'👤 <a href="{link}">Клиент личкаси</a>', f'✍️ <a href="{link}">Клиентга ёзиш</a>']
-        if o.username:
-            lines.append(f"@{e(o.username)}")
-        elif not o.phone:
-            # username/telefon yo'q: tg://user havolasi begona uchun ochilmasligi mumkin — ID bilan ogohlantiramiz
-            lines.append("ℹ️ <i>Havola ochilmasa — User ID orqali toping</i>")
-    # Manba uchun «🔗 Xabarga o'tish» tugmasi (source_url) yetarli — xunuk chat_id qatori qo'shilmaydi
-    from pipeline import route_hashtag
-    tag = route_hashtag(o.frm, o.to)
-    if tag:
-        lines.append(tag)
-    if order_no:                                # reply qilsa ham userbot mijozga yozadi
-        lines.append(f"#Order_{order_no}")
-    return "\n".join(lines)
+    """Yagona format (services/card.py) — oddiy yo'lovchi e'lonlari bilan bir xil."""
+    from services.card import render_card
+    return render_card(frm=o.frm, to=o.to, text_phone=o.phone, profile_phone=o.profile_phone, name=o.name,
+                       username=o.username, text=o.text,
+                       source_title=o.source_title or "Donor guruh", source_url=o.source_url, order_no=order_no)
 
 
 def target_for(o: DonorOrder, donor) -> int | None:
@@ -68,16 +50,18 @@ async def dispatch(o: DonorOrder, donor=None) -> str:
     stats["donor"] += 1
     log.info("[donor] %s → %s | uid=%s un=%s tel=%s", o.chat_id, target, o.user_id, o.username, o.phone)
     order_no = None
-    if o.user_id and not o.username:            # username yo'q: havola rad etilsa — #Order orqali yoziladi
+    if not o.username and (o.user_id or o.phone):   # username yo'q: «💬 Yozish» bosilsa bot mijozni qidiradi
         try:
             from services import order_contact
             order_no = order_contact.save(o.user_id, None, order_contact.active_owner(), None,
-                                          src_chat=o.chat_id, src_msg=o.msg_id, snippet=(o.text or "")[:200], phone=o.phone)
+                                          src_chat=o.chat_id, src_msg=o.msg_id, snippet=(o.text or "")[:200], phone=o.phone,
+                                          profile_phone=o.profile_phone)
         except Exception as e:
             log.warning("#Order (donor) saqlanmadi: %s", e)
     await queue.put(Outgoing(render(o, order_no), key="donor:" + (keys[0] if keys else str(o.msg_id)),
                              order_no=order_no,
-                             contact_url=o.link, chat_id=target, style="donor", undo_keys=keys,
+                             contact_url=f"https://t.me/{o.username}" if o.username else None,
+                             chat_id=target, style="donor", undo_keys=keys,
                              source_url=o.source_url,
                              # donorga guruh qattiq biriktirilmagan bo'lsa — yo'nalish bo'yicha qayta aniqlanadi
                              route=None if donor is not None and donor["target_chat_id"] else (o.frm, o.to)))

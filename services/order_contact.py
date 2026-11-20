@@ -67,7 +67,7 @@ def _db() -> sqlite3.Connection:
     c.execute("CREATE INDEX IF NOT EXISTS ix_oc_created ON order_contacts(created)")
     have = {r[1] for r in c.execute("PRAGMA table_info(order_contacts)")}
     for col, typ in (("src_chat", "INTEGER"), ("src_username", "TEXT"), ("src_msg", "INTEGER"), ("snippet", "TEXT"),
-                     ("phone", "TEXT")):
+                     ("phone", "TEXT"), ("profile_phone", "TEXT")):
         if col not in have:                 # asl xabar: haydovchi akkaunti mijozni shu orqali «tanib oladi»
             c.execute(f"ALTER TABLE order_contacts ADD COLUMN {col} {typ}")
     return c
@@ -117,32 +117,41 @@ async def remember(client: TelegramClient, event, sender=None) -> int | None:
     return save(sender.id, access_hash, me.id, name)
 
 
-def save(user_id: int, access_hash: int | None, owner_id: int | None, name: str | None = None,
+def save(user_id: int | None, access_hash: int | None, owner_id: int | None, name: str | None = None,
          src_chat: int | None = None, src_username: str | None = None, src_msg: int | None = None,
-         snippet: str | None = None, phone: str | None = None) -> int:
-    """Yozuv qo'shadi va #Order raqamini qaytaradi. Shu mijozning muddati o'tmagan yozuvi bo'lsa — o'sha raqam."""
-    owner_id = owner_id or 0
-    row = _conn.execute("SELECT order_no FROM order_contacts WHERE user_id=? AND created>? "
-                        "ORDER BY order_no DESC LIMIT 1", (user_id, time.time() - ttl_sec())).fetchone()
+         snippet: str | None = None, phone: str | None = None, profile_phone: str | None = None) -> int:
+    """Yozuv qo'shadi va #Order raqamini qaytaradi. Shu mijozning muddati o'tmagan yozuvi bo'lsa — o'sha raqam.
+    phone — xabar matnidagi raqam, profile_phone — Telegram profilidagi raqam (qidiruv tartibi resolve_for da)."""
+    user_id, owner_id = user_id or 0, owner_id or 0
+    since = time.time() - ttl_sec()
+    if user_id:
+        row = _conn.execute("SELECT order_no FROM order_contacts WHERE user_id=? AND created>? "
+                            "ORDER BY order_no DESC LIMIT 1", (user_id, since)).fetchone()
+    elif phone:
+        row = _conn.execute("SELECT order_no FROM order_contacts WHERE user_id=0 AND phone=? AND created>? "
+                            "ORDER BY order_no DESC LIMIT 1", (phone, since)).fetchone()
+    else:
+        row = None
+    snip = (snippet or "")[:200] or None
     if row:
         _conn.execute("UPDATE order_contacts SET access_hash=COALESCE(?, access_hash), owner_id=CASE WHEN ? "
                       "THEN ? ELSE owner_id END, src_chat=COALESCE(?, src_chat), src_username=COALESCE(?, src_username),"
-                      " src_msg=COALESCE(?, src_msg), snippet=COALESCE(?, snippet), phone=COALESCE(?, phone), contacted=0"
-                      " WHERE order_no=?",
-                      (access_hash, access_hash is not None, owner_id, src_chat, src_username, src_msg,
-                       (snippet or None) and snippet[:200], phone, row[0]))
+                      " src_msg=COALESCE(?, src_msg), snippet=COALESCE(?, snippet), phone=COALESCE(?, phone),"
+                      " profile_phone=COALESCE(?, profile_phone), contacted=0 WHERE order_no=?",
+                      (access_hash, access_hash is not None, owner_id, src_chat, src_username, src_msg, snip, phone,
+                       profile_phone, row[0]))
         return row[0]
     cur = _conn.execute(
         "INSERT INTO order_contacts(user_id, access_hash, owner_id, name, created, src_chat, src_username, src_msg,"
-        " snippet, phone) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        " snippet, phone, profile_phone) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
         (user_id, access_hash, owner_id, (name or "")[:60], time.time(), src_chat, src_username, src_msg,
-         (snippet or "")[:200], phone))
+         snip or "", phone, profile_phone))
     return cur.lastrowid
 
 
 def find(order_no: int):
     cols = ("user_id", "access_hash", "owner_id", "name", "created", "contacted", "src_chat", "src_username",
-            "src_msg", "snippet", "phone")
+            "src_msg", "snippet", "phone", "profile_phone")
     row = _conn.execute(f"SELECT {', '.join(cols)} FROM order_contacts WHERE order_no=?", (order_no,)).fetchone()
     if not row or time.time() - row[4] > ttl_sec():
         return None
@@ -173,26 +182,35 @@ def driver_mention(driver) -> str:
 
 
 async def resolve_for(client: TelegramClient, rec: dict):
-    """Mijozni SHU akkaunt uchun topadi (access_hash har akkauntda boshqa):
-    1) saqlangan hash shu akkauntniki bo'lsa; 2) sessiya keshi; 3) asl xabarni shu akkaunt bilan o'qib olish."""
+    """Mijozni SHU akkaunt uchun topadi (access_hash har akkauntda boshqa). Tartib:
+    0) shu akkaunt allaqachon taniydi (saqlangan hash / sessiya keshi — tarmoqsiz, bepul)
+    1) xabar matnidagi telefon raqami
+    2) Telegram bo'yicha: asl xabarni shu akkaunt bilan o'qib (guruh a'zosi yoki ochiq guruh)
+    3) Telegram profilidagi telefon raqami"""
     me = (await client.get_me()).id
-    if rec["access_hash"] is not None and rec["owner_id"] == me:
-        return InputPeerUser(rec["user_id"], rec["access_hash"])
-    try:
-        return await client.get_input_entity(rec["user_id"])
-    except (ValueError, PeerIdInvalidError):
-        pass
-    if rec.get("src_msg") and (rec.get("src_username") or rec.get("src_chat")):
+    uid = rec["user_id"] or None
+    if rec["access_hash"] is not None and rec["owner_id"] == me and uid:
+        return InputPeerUser(uid, rec["access_hash"])
+    if uid:
+        try:
+            return await client.get_input_entity(uid)
+        except (ValueError, PeerIdInvalidError):
+            pass
+    if rec.get("phone"):
+        peer = await _by_phone(client, rec["phone"], uid)
+        if peer is not None:
+            return peer
+    if uid and rec.get("src_msg") and (rec.get("src_username") or rec.get("src_chat")):
         try:
             msg = await client.get_messages(rec["src_username"] or rec["src_chat"], ids=rec["src_msg"])
             if msg is not None:
-                if msg.sender_id == rec["user_id"]:
+                if msg.sender_id == uid:
                     return await msg.get_input_sender()
-                return await client.get_input_entity(rec["user_id"])   # donor: mijoz tugma/havolada keldi
+                return await client.get_input_entity(uid)   # donor: mijoz tugma/havolada keldi
         except Exception as e:
-            log.info("Asl xabar orqali topilmadi (user_id=%s): %s", rec["user_id"], e)
-    if rec.get("phone"):                    # 4) telefon orqali: guruhga a'zo bo'lmasa ham topadi
-        peer = await _by_phone(client, rec["phone"], rec["user_id"])
+            log.info("Asl xabar orqali topilmadi (user_id=%s): %s", uid, e)
+    if rec.get("profile_phone") and rec.get("profile_phone") != rec.get("phone"):
+        peer = await _by_phone(client, rec["profile_phone"], uid)
         if peer is not None:
             return peer
     raise ValueError("entity not found")
@@ -320,20 +338,31 @@ DRIVER_DM_TEXT = ("Assalomu alaykum! Guruhdagi e'loningizni ko'rdim{snippet}.\n"
                   "Men haydovchiman 🚕 Hali ham mashina kerakmi? Yo'nalish va vaqtni yozing.")
 
 
-async def contact(client: TelegramClient, order_no: int, driver_id: int, driver_username: str | None,
-                  driver_name: str | None, as_driver: bool = False) -> str:
-    """«💬 Yozish» / reply (username'siz mijoz). Natija kaliti _REPLY da.
-    as_driver=True — client haydovchining O'Z akkaunti: xabar haydovchi nomidan, oddiy suhbat sifatida ketadi.
-    as_driver=False — asosiy userbot: «haydovchi siz bilan bog'lanmoqchi» + haydovchiga havola."""
+def _username_of(ent) -> str | None:
+    return getattr(ent, "username", None) or next(
+        (u.username for u in (getattr(ent, "usernames", None) or []) if getattr(u, "active", False)), None)
+
+
+async def reach(client: TelegramClient, order_no: int, driver_id: int, driver_username: str | None,
+                driver_name: str | None, as_driver: bool = False) -> tuple[str, str | None]:
+    """Mijozni topadi. Username chiqsa — xabar yozilmaydi: ("username", "@...") — tugma lichkaga aylanadi.
+    Username yo'q — mijozga yozadi: ("ok", None) yoki xato kaliti (_REPLY).
+    as_driver=True — haydovchining O'Z akkaunti, oddiy suhbat; False — asosiy userbot, «haydovchi bog'lanmoqchi»."""
     rec = find(order_no)
     if not rec:
-        return "expired"
+        return "expired", None
     if rec["contacted"]:
-        return "already"
+        return "already", None
     try:
         peer = await resolve_for(client, rec)
     except (ValueError, PeerIdInvalidError):
-        return "not_found_driver" if as_driver else "not_found"
+        return ("not_found_driver" if as_driver else "not_found"), None
+    try:
+        username = _username_of(await client.get_entity(peer))
+    except Exception:
+        username = None
+    if username:
+        return "username", username
     if as_driver:
         snip = rec.get("snippet")
         text = DRIVER_DM_TEXT.format(snippet=f": «{html.escape(snip[:120])}»" if snip else "")
@@ -351,7 +380,13 @@ async def contact(client: TelegramClient, order_no: int, driver_id: int, driver_
     res = await send_dm(client, rec["user_id"], None, text, peer=peer)
     if res != "ok":
         _conn.execute("UPDATE order_contacts SET contacted=0 WHERE order_no=?", (order_no,))
-    return res
+    return res, None
+
+
+async def contact(client: TelegramClient, order_no: int, driver_id: int, driver_username: str | None,
+                  driver_name: str | None, as_driver: bool = False) -> str:
+    """Eski nom (moslik uchun)."""
+    return (await reach(client, order_no, driver_id, driver_username, driver_name, as_driver))[0]
 
 
 _active = {"owner_id": None}               # ishlab turgan userbot akkaunti (register() da o'rnatiladi)
