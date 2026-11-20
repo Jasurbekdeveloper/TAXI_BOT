@@ -122,14 +122,48 @@ def collect_links(message) -> list[tuple[str, str | None, int | None]]:
         uid = getattr(ent, "user_id", None)                 # MessageEntityMentionName (text_mention)
         if url or uid:
             out.append((_slice16(text, getattr(ent, "offset", 0), getattr(ent, "length", 0)), url, uid))
-    markup = getattr(message, "reply_markup", None)
-    for row in getattr(markup, "rows", None) or []:
-        for btn in getattr(row, "buttons", None) or []:
-            url = getattr(btn, "url", None)                 # KeyboardButtonUrl
-            uid = getattr(btn, "user_id", None)             # KeyboardButtonUserProfile
-            if url or uid:
-                out.append((getattr(btn, "text", "") or "", url, uid))
+    for btn in _buttons(message):
+        url, uid = _btn_target(btn)
+        if url or uid:
+            out.append((getattr(btn, "text", "") or "", url, uid))
     return out
+
+
+def _buttons(message) -> list:
+    markup = getattr(message, "reply_markup", None)
+    return [b for row in (getattr(markup, "rows", None) or []) for b in (getattr(row, "buttons", None) or [])]
+
+
+def _btn_target(btn) -> tuple[str | None, int | None]:
+    """Tugma turidan qat'i nazar (KeyboardButtonUrl / UserProfile / yangi layer turlari) havola yoki user ID.
+    Avval oddiy atributlar, keyin to_dict() ichidan rekursiv qidiriladi."""
+    url = getattr(btn, "url", None)
+    uid = getattr(btn, "user_id", None)
+    if url or uid:
+        return url, uid
+    try:
+        d = btn.to_dict()
+    except Exception:
+        return None, None
+    found = {"url": None, "uid": None}
+
+    def walk(x):
+        if isinstance(x, dict):
+            for k, v in x.items():
+                if k == "url" and isinstance(v, str) and not found["url"]:
+                    found["url"] = v
+                elif k in ("user_id", "id") and isinstance(v, int) and x.get("_", "").lower().find("user") >= 0 \
+                        and not found["uid"]:
+                    found["uid"] = v
+                elif k == "username" and isinstance(v, str) and not found["url"]:
+                    found["url"] = f"https://t.me/{v}"
+                else:
+                    walk(v)
+        elif isinstance(x, (list, tuple)):
+            for v in x:
+                walk(v)
+    walk(d)
+    return found["url"], found["uid"]
 
 
 def clean_text(text: str) -> str:
@@ -358,7 +392,12 @@ async def handle(event, exclude_sender_ids=()) -> str:
     ents = getattr(message, "entities", None) or []
     mention = any(getattr(e, "user_id", None) for e in ents)
     markup = getattr(message, "reply_markup", None)
-    btn_types = [type(b).__name__ for row in (getattr(markup, "rows", None) or []) for b in (row.buttons or [])]
+    btn_types = [type(b).__name__ for b in _buttons(message)]
+    if btn_types and not order.urls:        # tugma bor, lekin havola topilmadi — tuzilishini logga yozamiz
+        try:
+            log.info("[donor] tugma tuzilishi: %s", str(_buttons(message)[0].to_dict())[:300])
+        except Exception:
+            pass
     log.info("[donor] kontakt | uid=%s un=%s mention=%s btn=%s link=%s urls=%s markup=%s btns=%s",
              order.user_id, order.username, mention, order.btn_url, order.link, order.urls[:4],
              type(markup).__name__ if markup is not None else None, btn_types[:4])
