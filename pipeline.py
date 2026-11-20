@@ -360,6 +360,11 @@ async def _chat_worker(bot: Bot, chat_q: asyncio.Queue):
             await _global_slot()
             await _deliver(bot, item)
             stats["sent"] += 1
+            # Yopiq guruhga uzatilgan har bir e'lon: grep "\[sent\]"
+            info = " | ".join(x.strip() for x in item.text.splitlines()[1:3] if x.strip())
+            log.info("[sent] → %s | %s | %s%s", item.chat_id or config.DRIVERS_CHAT_ID,
+                     re.sub(r"<[^>]+>", "", info)[:80], "donor" if item.style == "donor" else "guruh",
+                     f" | #Order_{item.order_no}" if item.order_no else "")
             _finish(item, True)
         except TelegramRetryAfter as e:      # limit faqat shu guruhni kuttiradi
             log.warning("Telegram limiti, %s s kutamiz", e.retry_after)
