@@ -66,7 +66,8 @@ def _db() -> sqlite3.Connection:
         contacted   INTEGER DEFAULT 0)""")
     c.execute("CREATE INDEX IF NOT EXISTS ix_oc_created ON order_contacts(created)")
     have = {r[1] for r in c.execute("PRAGMA table_info(order_contacts)")}
-    for col, typ in (("src_chat", "INTEGER"), ("src_username", "TEXT"), ("src_msg", "INTEGER"), ("snippet", "TEXT")):
+    for col, typ in (("src_chat", "INTEGER"), ("src_username", "TEXT"), ("src_msg", "INTEGER"), ("snippet", "TEXT"),
+                     ("phone", "TEXT")):
         if col not in have:                 # asl xabar: haydovchi akkaunti mijozni shu orqali «tanib oladi»
             c.execute(f"ALTER TABLE order_contacts ADD COLUMN {col} {typ}")
     return c
@@ -118,7 +119,7 @@ async def remember(client: TelegramClient, event, sender=None) -> int | None:
 
 def save(user_id: int, access_hash: int | None, owner_id: int | None, name: str | None = None,
          src_chat: int | None = None, src_username: str | None = None, src_msg: int | None = None,
-         snippet: str | None = None) -> int:
+         snippet: str | None = None, phone: str | None = None) -> int:
     """Yozuv qo'shadi va #Order raqamini qaytaradi. Shu mijozning muddati o'tmagan yozuvi bo'lsa — o'sha raqam."""
     owner_id = owner_id or 0
     row = _conn.execute("SELECT order_no FROM order_contacts WHERE user_id=? AND created>? "
@@ -126,21 +127,22 @@ def save(user_id: int, access_hash: int | None, owner_id: int | None, name: str 
     if row:
         _conn.execute("UPDATE order_contacts SET access_hash=COALESCE(?, access_hash), owner_id=CASE WHEN ? "
                       "THEN ? ELSE owner_id END, src_chat=COALESCE(?, src_chat), src_username=COALESCE(?, src_username),"
-                      " src_msg=COALESCE(?, src_msg), snippet=COALESCE(?, snippet), contacted=0 WHERE order_no=?",
+                      " src_msg=COALESCE(?, src_msg), snippet=COALESCE(?, snippet), phone=COALESCE(?, phone), contacted=0"
+                      " WHERE order_no=?",
                       (access_hash, access_hash is not None, owner_id, src_chat, src_username, src_msg,
-                       (snippet or None) and snippet[:200], row[0]))
+                       (snippet or None) and snippet[:200], phone, row[0]))
         return row[0]
     cur = _conn.execute(
         "INSERT INTO order_contacts(user_id, access_hash, owner_id, name, created, src_chat, src_username, src_msg,"
-        " snippet) VALUES (?,?,?,?,?,?,?,?,?)",
+        " snippet, phone) VALUES (?,?,?,?,?,?,?,?,?,?)",
         (user_id, access_hash, owner_id, (name or "")[:60], time.time(), src_chat, src_username, src_msg,
-         (snippet or "")[:200]))
+         (snippet or "")[:200], phone))
     return cur.lastrowid
 
 
 def find(order_no: int):
     cols = ("user_id", "access_hash", "owner_id", "name", "created", "contacted", "src_chat", "src_username",
-            "src_msg", "snippet")
+            "src_msg", "snippet", "phone")
     row = _conn.execute(f"SELECT {', '.join(cols)} FROM order_contacts WHERE order_no=?", (order_no,)).fetchone()
     if not row or time.time() - row[4] > ttl_sec():
         return None
@@ -189,7 +191,53 @@ async def resolve_for(client: TelegramClient, rec: dict):
                 return await client.get_input_entity(rec["user_id"])   # donor: mijoz tugma/havolada keldi
         except Exception as e:
             log.info("Asl xabar orqali topilmadi (user_id=%s): %s", rec["user_id"], e)
+    if rec.get("phone"):                    # 4) telefon orqali: guruhga a'zo bo'lmasa ham topadi
+        peer = await _by_phone(client, rec["phone"], rec["user_id"])
+        if peer is not None:
+            return peer
     raise ValueError("entity not found")
+
+
+async def lookup_username(client: TelegramClient, order_no: int) -> str | None:
+    """Mijozning @username'ini aniqlaydi (bo'lsa). Topilsa — xabar yozish shart emas: lichka havolasi beriladi."""
+    rec = find(order_no)
+    if not rec:
+        return None
+    try:
+        peer = await resolve_for(client, rec)
+        ent = await client.get_entity(peer)
+        return getattr(ent, "username", None) or next(
+            (u.username for u in (getattr(ent, "usernames", None) or []) if getattr(u, "active", False)), None)
+    except Exception as e:
+        log.info("Username aniqlanmadi (order=%s): %s", order_no, str(e)[:90])
+        return None
+
+
+async def _by_phone(client: TelegramClient, phone: str, user_id: int | None):
+    """Raqamni vaqtincha kontaktga qo'shib mijozni topadi, keyin kontaktdan o'chiradi (access_hash qoladi).
+    Mijoz maxfiylikda «raqam orqali topish»ni yopgan bo'lsa natija bo'sh bo'ladi."""
+    from telethon.tl.functions.contacts import DeleteContactsRequest, ImportContactsRequest
+    from telethon.tl.types import InputPhoneContact
+    digits = re.sub(r"\D", "", phone or "")
+    if len(digits) < 9:
+        return None
+    try:
+        res = await client(ImportContactsRequest([InputPhoneContact(
+            client_id=random.randrange(1, 2 ** 31), phone="+" + digits, first_name="Mijoz", last_name="")]))
+        user = next((u for u in res.users if not user_id or u.id == user_id), None) or (res.users[0] if res.users else None)
+        if user is None:
+            return None
+        peer = InputPeerUser(user.id, user.access_hash)
+        try:
+            await client(DeleteContactsRequest(id=[user]))
+        except Exception:
+            pass
+        return peer
+    except FloodWaitError as e:
+        log.warning("Telefon orqali qidirish: FloodWait %s s", e.seconds)
+    except Exception as e:
+        log.info("Telefon orqali topilmadi: %s", str(e)[:90])
+    return None
 
 
 async def send_dm(client: TelegramClient, user_id: int, access_hash: int | None, text: str, peer=None) -> str:
@@ -262,8 +310,8 @@ _REPLY.update({
     "already": "ℹ️ Bu mijozga allaqachon boshqa haydovchi orqali xabar yuborilgan.",
     "other_account": "⚠️ Bu mijozni boshqa userbot akkaunti ko'rgan, yozib bo'lmadi.",
     "no_userbot": "⚠️ Akkauntingiz botga ulanmagan. Botda «🔐 Akkauntni ulash» ni bosing yoki telefon orqali bog'laning.",
-    "not_found_driver": "⚠️ Akkauntingiz mijozni topa olmadi: siz bu e'lon chiqqan guruhga a'zo emassiz. "
-                        "Telefon yoki «🔗 Xabarga o'tish» orqali bog'laning.",
+    "not_found_driver": "⚠️ Mijozni topib bo'lmadi: u e'lon chiqqan guruhga a'zo emassiz va mijoz raqam "
+                        "orqali qidirishni yopgan. Telefon yoki «🔗 Xabarga o'tish» orqali bog'laning.",
     "ok_driver": "✅ Mijozga sizning akkauntingizdan yozildi. Javobini o'z Telegramingizda ko'rasiz.",
 })
 

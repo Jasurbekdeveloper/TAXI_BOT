@@ -72,7 +72,7 @@ async def dispatch(o: DonorOrder, donor=None) -> str:
         try:
             from services import order_contact
             order_no = order_contact.save(o.user_id, None, order_contact.active_owner(), None,
-                                          src_chat=o.chat_id, src_msg=o.msg_id, snippet=(o.text or "")[:200])
+                                          src_chat=o.chat_id, src_msg=o.msg_id, snippet=(o.text or "")[:200], phone=o.phone)
         except Exception as e:
             log.warning("#Order (donor) saqlanmadi: %s", e)
     await queue.put(Outgoing(render(o, order_no), key="donor:" + (keys[0] if keys else str(o.msg_id)),

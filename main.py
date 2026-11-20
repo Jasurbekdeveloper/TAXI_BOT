@@ -140,8 +140,32 @@ async def _contact_flow(bot: Bot, who, order_no: int, reply_to: Message | None):
     """Avval haydovchining O'Z ulangan akkauntidan yozadi (yuk akkauntlar orasida bo'linadi).
     Akkaunt ulanmagan yoki mijozni topa olmasa — asosiy userbot «haydovchi bog'lanmoqchi» deb yozadi."""
     name = " ".join(x for x in (who.first_name, who.last_name) if x) or None
-    res = "no_userbot"
     own = manager.clients.get(who.id)
+    # 1) Mijozda username bo'lsa — xabar yozmaymiz, tugmani to'g'ridan-to'g'ri lichka havolasiga aylantiramiz
+    for client in (own, admin.userbot):
+        if client is None:
+            continue
+        username = await order_contact.lookup_username(client, order_no)
+        if username:
+            url = f"https://t.me/{username}"
+            ad = reply_to.reply_to_message if (reply_to is not None and reply_to.reply_to_message) else reply_to
+            if ad is not None and ad.reply_markup:
+                rows = [[InlineKeyboardButton(text=b.text, url=url) if b.callback_data == f"oc:{order_no}" else b
+                         for b in row] for row in ad.reply_markup.inline_keyboard]
+                try:
+                    await ad.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+                except AiogramError:
+                    pass
+            text = f"👤 Mijoz lichkasi: @{username}\nTugma endi to'g'ridan-to'g'ri lichkani ochadi."
+            try:
+                await bot.send_message(who.id, text)
+            except AiogramError:
+                if reply_to is not None:
+                    mention = f"@{who.username}" if who.username else html.escape(who.full_name)
+                    await reply_to.reply(f"{mention}: {html.escape(text)}", parse_mode="HTML")
+            return
+    # 2) Username yo'q — mijozga xabar yoziladi
+    res = "no_userbot"
     if own is not None:
         res = await order_contact.contact(own, order_no, who.id, who.username, name, as_driver=True)
         if res == "ok":

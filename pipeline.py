@@ -282,7 +282,7 @@ async def process(m: Incoming) -> str | None:
             # access_hash bo'lmasa ham saqlanadi: tugma bosgan haydovchi akkaunti mijozni asl xabardan topadi
             order_no = order_contact.save(m.user_id, m.access_hash, m.owner_id or order_contact.active_owner(),
                                           m.user_name, src_chat=m.chat_id, src_username=m.chat_username,
-                                          src_msg=m.msg_id, snippet=(tidy(m.text) or m.text)[:200])
+                                          src_msg=m.msg_id, snippet=(tidy(m.text) or m.text)[:200], phone=phone)
         except Exception as e:                  # #Order ishlamasa ham e'lon yo'qolmasin
             log.warning("#Order saqlanmadi: %s", e)
     await queue.put(Outgoing(render(m, frm, to, seats, when, phone, order_no), key,
