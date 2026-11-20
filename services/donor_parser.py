@@ -236,7 +236,29 @@ async def _resolve_username(event, user_id):
             return ent.username
     except Exception:
         pass
-    # 2) «min-user»: mijoz shu xabarda ishora (mention) qilingan — xabarni kontekst qilib aniqlaymiz
+    # 2) Xabarni xom so'rov bilan qayta olamiz: «Клиент личкаси» profil tugmasi (KeyboardButtonUserProfile)
+    #    bo'lsa, Telegram mijozni javobning users ro'yxatida username'i bilan birga yuboradi
+    try:
+        from telethon.tl.functions.channels import GetMessagesRequest as ChGetMessages
+        from telethon.tl.functions.messages import GetMessagesRequest
+        from telethon.tl.types import InputMessageID, InputPeerChannel
+        msg = getattr(event, "message", None)
+        msg_id = getattr(msg, "id", None) or getattr(event, "id", None)
+        if msg_id:
+            peer = await client.get_input_entity(event.chat_id)
+            if isinstance(peer, InputPeerChannel):
+                res = await client(ChGetMessages(channel=peer, id=[InputMessageID(msg_id)]))
+            else:
+                res = await client(GetMessagesRequest(id=[InputMessageID(msg_id)]))
+            for u in getattr(res, "users", None) or []:
+                if u.id == user_id:
+                    name = getattr(u, "username", None) or next(
+                        (x.username for x in (getattr(u, "usernames", None) or []) if getattr(x, "active", False)), None)
+                    if name:
+                        return name
+    except Exception as e:
+        log.info("[donor] xabar orqali username olinmadi (uid=%s): %s", user_id, str(e)[:90])
+    # 3) «min-user»: mijoz shu xabarda ishora (mention) qilingan — xabarni kontekst qilib aniqlaymiz
     try:
         from telethon.tl.functions.users import GetUsersRequest
         from telethon.tl.types import InputUserFromMessage
@@ -324,9 +346,10 @@ async def handle(event, exclude_sender_ids=()) -> str:
     ents = getattr(message, "entities", None) or []
     mention = any(getattr(e, "user_id", None) for e in ents)
     markup = getattr(message, "reply_markup", None)
-    log.info("[donor] kontakt | uid=%s un=%s mention=%s btn=%s link=%s urls=%s markup=%s",
+    btn_types = [type(b).__name__ for row in (getattr(markup, "rows", None) or []) for b in (row.buttons or [])]
+    log.info("[donor] kontakt | uid=%s un=%s mention=%s btn=%s link=%s urls=%s markup=%s btns=%s",
              order.user_id, order.username, mention, order.btn_url, order.link, order.urls[:4],
-             type(markup).__name__ if markup is not None else None)
+             type(markup).__name__ if markup is not None else None, btn_types[:4])
     if not order.text or not (order.link or order.phone):
         stats["donor_skipped"] += 1
         return "no_contact"
