@@ -26,7 +26,7 @@ from handlers import admin_panel, driver_cabinet
 from handlers.middlewares import TrackUsers
 from nlp import fmt_phone
 from pipeline import Incoming, process, sender
-from services import donor_parser, learn, order_contact
+from services import donor_parser, learn, order_contact, userbot_coverage
 from services.broadcaster import manager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -247,6 +247,7 @@ async def run_userbot():
     admin.userbot = client
     me_id["id"] = (await client.get_me()).id
     order_contact.register(client, routes.closed_chat_ids)   # haydovchi #Order ga reply qilsa — mijozga yozadi
+    asyncio.create_task(userbot_coverage.loop(client, manager))   # haydovchilar/donor guruhlariga avto-qo'shilish
     log.info("Userbot ishga tushdi")
     try:
         await client.run_until_disconnected()
