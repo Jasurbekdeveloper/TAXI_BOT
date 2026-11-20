@@ -11,6 +11,7 @@ donor guruhdan yangi xabar olganda handle() chaqiriladi. Xabardan ajratiladi:
 Haydovchi e'loni (nlp/AI "driver") uzatilmaydi. Natija services.order_dispatcher ga beriladi.
 Telethon obyektlari "duck typing" bilan o'qiladi (testlarda soddalashtirilgan obyektlar ishlatiladi).
 """
+import asyncio
 import logging
 import re
 from collections import OrderedDict
@@ -252,6 +253,24 @@ async def _resolve_username(event, user_id):
     return None
 
 
+async def _refetch_with_buttons(event, message, waits=(2, 4)):
+    client = getattr(event, "client", None)
+    msg_id = getattr(message, "id", None)
+    if client is None or not msg_id:
+        return message
+    for w in waits:
+        await asyncio.sleep(w)
+        try:
+            fresh = await client.get_messages(event.chat_id, ids=msg_id)
+        except Exception as e:
+            log.info("[donor] qayta o'qib bo'lmadi: %s", str(e)[:90])
+            return message
+        if fresh is not None and collect_links(fresh):
+            log.info("[donor] tugma keyinroq qo'shilgan ekan — qayta o'qildi (%s s)", w)
+            return fresh
+    return message
+
+
 # ---------- asosiy oqim ----------
 async def handle(event, exclude_sender_ids=()) -> str:
     """Donor guruh xabari. Natija: 'sent', 'dup', 'driver', 'empty', 'no_contact', 'seen', 'skip'."""
@@ -291,6 +310,10 @@ async def handle(event, exclude_sender_ids=()) -> str:
         log.info("[donor] taksi e'loni emas, o'tkazildi | %s", raw[:60].replace("\n", " "))
         return "noroute"
 
+    if not collect_links(message):
+        # Ko'p donor botlar avval matnni yuboradi, «Клиент личкаси» tugmasini esa keyinroq (edit bilan) qo'shadi.
+        # NewMessage paytida tugma hali yo'q (log: btn=None urls=[]) — biroz kutib xabarni qayta o'qiymiz.
+        message = await _refetch_with_buttons(event, message)
     order = extract(message, chat_id, sender)
     if order.user_id and not order.username:             # username bo'lmasa — userbot orqali aniqlab ko'ramiz (link chiqsin)
         un = await _resolve_username(event, order.user_id)
@@ -300,8 +323,10 @@ async def handle(event, exclude_sender_ids=()) -> str:
     # mention=True — mijoz xabarda haqiqiy ishora (MentionName) bilan; min-user aniqlash shunda mumkin.
     ents = getattr(message, "entities", None) or []
     mention = any(getattr(e, "user_id", None) for e in ents)
-    log.info("[donor] kontakt | uid=%s un=%s mention=%s btn=%s link=%s urls=%s",
-             order.user_id, order.username, mention, order.btn_url, order.link, order.urls[:4])
+    markup = getattr(message, "reply_markup", None)
+    log.info("[donor] kontakt | uid=%s un=%s mention=%s btn=%s link=%s urls=%s markup=%s",
+             order.user_id, order.username, mention, order.btn_url, order.link, order.urls[:4],
+             type(markup).__name__ if markup is not None else None)
     if not order.text or not (order.link or order.phone):
         stats["donor_skipped"] += 1
         return "no_contact"
