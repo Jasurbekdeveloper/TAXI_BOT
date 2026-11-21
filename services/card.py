@@ -53,7 +53,7 @@ def _tel(p) -> str:
 
 def render_card(*, frm=None, to=None, when=None, seats=None, text_phone=None, profile_phone=None,
                 name=None, username=None, text="", source_title=None, source_url=None,
-                order_no=None) -> str:
+                order_no=None, user_id=None) -> str:
     e = html.escape
     lines = ["🧍 <b>YO'LOVCHI</b>"]
     if frm or to:
@@ -69,6 +69,8 @@ def render_card(*, frm=None, to=None, when=None, seats=None, text_phone=None, pr
     who = " · ".join(x for x in (e(name) if name else "", f"@{e(username)}" if username else "") if x)
     if who:
         lines.append(f"👤 {who}")
+    if user_id:
+        lines.append(f"🆔 <code>{int(user_id)}</code>")
     lines.append(STATUS[contact_status(username, order_no)])
     if text:
         lines.append(f"\n💬 <i>{e(text[:400])}</i>")

@@ -22,7 +22,7 @@ def render(o: DonorOrder, order_no: int | None = None) -> str:
     """Yagona format (services/card.py) — oddiy yo'lovchi e'lonlari bilan bir xil."""
     from services.card import render_card
     return render_card(frm=o.frm, to=o.to, text_phone=o.phone, profile_phone=o.profile_phone, name=o.name,
-                       username=o.username, text=o.text,
+                       username=o.username, text=o.text, user_id=o.user_id,
                        source_title=o.source_title or "Donor guruh", source_url=o.source_url, order_no=order_no)
 
 

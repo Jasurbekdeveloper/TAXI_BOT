@@ -291,8 +291,11 @@ class Manager:
                 await self.sleep(random.uniform(gap, gap + 7))
             for attempt in (1, 2):
                 try:
+                    if attempt == 1:
+                        await self._delete_previous(uid, client, cid)
                     # parse_mode=None: haydovchi matnidagi * _ ` markdown deb buzilmasin
-                    await client.send_message(cid, text, parse_mode=None, link_preview=False)
+                    sent = await client.send_message(cid, text, parse_mode=None, link_preview=False)
+                    crud.set_last_post(uid, cid, getattr(sent, "id", None))
                     crud.record_post(uid, cid)
                     ok += 1
                 except Exception as e:
@@ -320,6 +323,18 @@ class Manager:
         return ok, skipped
 
     # ---------- uzish ----------
+    async def _delete_previous(self, uid: int, client, cid: int):
+        """Shu guruhga oldingi siklda yuborilgan e'lonni o'chiradi — guruhda har doim bitta, eng yangi e'lon.
+        O'chirib bo'lmasa (allaqachon o'chirilgan, huquq yo'q) — jim davom etadi, yangisi baribir yuboriladi."""
+        old = crud.last_post(uid, cid)
+        if not old:
+            return
+        try:
+            await client.delete_messages(cid, [old])
+        except Exception as e:
+            log.info("Eski e'lon o'chirilmadi user=%s guruh=%s: %s", uid, cid, _name(e))
+        crud.set_last_post(uid, cid, None)
+
     async def disconnect(self, uid: int, logout: bool = True):
         """Haydovchi o'zi uzganda yoki admin sessiyani uzganda: rassilka to'xtaydi, sessiya o'chadi."""
         self.stop_broadcast(uid)

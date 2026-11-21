@@ -54,6 +54,7 @@ class Outgoing:
     source_url: str | None = None           # «🔗 Xabarga o'tish»: asl xabar (lichka yopiq bo'lsa ismiga bosib yoziladi)
     order_no: int | None = None             # username'siz mijoz: «💬 Yozish» tugmasi userbot orqali yozadi
     route: tuple | None = None              # (frm, to): yuborish oldidan yopiq guruh qayta aniqlanadi (admin almashtirsa)
+    mention: dict | None = None             # username'siz o'z xabari: userbot e'longa mention reply qiladi
 
 
 # ---------- Dedup ----------
@@ -146,7 +147,8 @@ def render(m: Incoming, frm, to, seats, when, phone, order_no: int | None = None
     return render_card(frm=frm, to=to, when=when, seats=seats, text_phone=text_phone, profile_phone=profile_phone,
                        name=name, username=username or (None if rid else m.username),
                        text=tidy(m.text) or clean_text(m.text)[:400], source_title=m.chat_title,
-                       source_url=source_link(m), order_no=order_no)
+                       source_url=source_link(m), order_no=order_no,
+                       user_id=rid or (m.user_id if m.user_id and m.user_id > 0 else None))
 
 
 def render_order(user_id, username, full_name, d: dict) -> str:
@@ -280,7 +282,10 @@ async def process(m: Incoming) -> str | None:
     await queue.put(Outgoing(render(m, frm, to, seats, when, phone, order_no, text_phone=p.phone,
                                     profile_phone=m.phone, username=username), key,
                              contact_url=url, order_no=order_no,
-                             chat_id=routes.target_chat(frm, to), source_url=source_link(m), route=(frm, to)))
+                             chat_id=routes.target_chat(frm, to), source_url=source_link(m), route=(frm, to),
+                             mention=None if (rid or username or not client_id) else {
+                                 "user_id": client_id, "access_hash": m.access_hash, "owner_id": m.owner_id,
+                                 "name": m.user_name}))
     return label
 
 
@@ -301,26 +306,25 @@ def taken_kb(passenger_id=None, url=None, style="default", source_url=None, orde
 
 async def _deliver(bot: Bot, item: Outgoing):
     async def send(url):
-        await bot.send_message(item.chat_id or config.DRIVERS_CHAT_ID, item.text, parse_mode="HTML",
+        return await bot.send_message(item.chat_id or config.DRIVERS_CHAT_ID, item.text, parse_mode="HTML",
                                reply_markup=taken_kb(item.passenger_id, url, item.style, item.source_url, item.order_no),
                                disable_web_page_preview=True)
 
     try:
-        await send(item.contact_url)
+        return await send(item.contact_url)
     except (TelegramBadRequest, TelegramForbiddenError) as e:
         # Yo'nalishning yopiq guruhiga yozib bo'lmasa (bot chiqarilgan, ID xato) — e'lon yo'qolmasin
         if item.chat_id and item.chat_id != config.DRIVERS_CHAT_ID and "BUTTON_USER" not in str(e):
             log.error("Yopiq guruhga yuborilmadi (chat=%s): %s. DRIVERS_CHAT_ID ga yuboriladi", item.chat_id, e)
             item.chat_id = None
-            await _deliver(bot, item)
-            return
+            return await _deliver(bot, item)
         if not isinstance(e, TelegramBadRequest):
             raise
         # Yo'lovchi maxfiylik sozlamasi tg://user tugmasini taqiqlasa, Telegram butun xabarni rad etadi
         if not (item.contact_url and "BUTTON_USER" in str(e)):
             raise
         log.info("Yozish tugmasi olib tashlandi: yo'lovchi maxfiyligi cheklangan")
-        await send(None)
+        return await send(None)
 
 
 def _finish(item: Outgoing, ok: bool):
@@ -358,8 +362,11 @@ async def _chat_worker(bot: Bot, chat_q: asyncio.Queue):
                 continue
         try:
             await _global_slot()
-            await _deliver(bot, item)
+            sent_msg = await _deliver(bot, item)
             stats["sent"] += 1
+            if item.mention and sent_msg is not None:     # qo'shimcha: userbot mention reply (xatosi e'longa ta'sir qilmaydi)
+                from services import mention_reply
+                asyncio.create_task(mention_reply.send(sent_msg.chat.id, sent_msg.message_id, item.mention))
             # Yopiq guruhga uzatilgan har bir e'lon: grep "\[sent\]"
             info = " | ".join(x.strip() for x in item.text.splitlines()[1:3] if x.strip())
             log.info("[sent] → %s | %s | %s%s", item.chat_id or config.DRIVERS_CHAT_ID,

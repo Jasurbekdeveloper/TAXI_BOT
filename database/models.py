@@ -66,6 +66,14 @@ CREATE TABLE IF NOT EXISTS post_log (
 );
 CREATE INDEX IF NOT EXISTS idx_post_log_ts ON post_log(ts);
 
+-- Rassilka: har guruhdagi oxirgi e'lon (yangisidan oldin o'chiriladi — guruhda bitta e'lon turadi)
+CREATE TABLE IF NOT EXISTS last_post (
+    user_id  INTEGER NOT NULL,
+    chat_id  INTEGER NOT NULL,
+    msg_id   INTEGER NOT NULL,
+    PRIMARY KEY (user_id, chat_id)
+);
+
 CREATE TABLE IF NOT EXISTS routes (
     id       INTEGER PRIMARY KEY AUTOINCREMENT,
     city_a   TEXT NOT NULL,

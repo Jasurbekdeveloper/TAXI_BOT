@@ -210,6 +210,19 @@ def record_post(user_id: int, chat_id: int, now: float | None = None):
     c.execute("DELETE FROM post_log WHERE ts < ?", (now - 2 * DAY,))
 
 
+def last_post(user_id: int, chat_id: int) -> int | None:
+    row = conn().execute("SELECT msg_id FROM last_post WHERE user_id=? AND chat_id=?", (user_id, chat_id)).fetchone()
+    return row[0] if row else None
+
+
+def set_last_post(user_id: int, chat_id: int, msg_id: int | None):
+    if msg_id is None:
+        conn().execute("DELETE FROM last_post WHERE user_id=? AND chat_id=?", (user_id, chat_id))
+    else:
+        conn().execute("INSERT OR REPLACE INTO last_post(user_id, chat_id, msg_id) VALUES (?,?,?)",
+                       (user_id, chat_id, msg_id))
+
+
 def report(user_id: int, now: float | None = None) -> list[tuple[str, int]]:
     now = time.time() if now is None else now
     rows = conn().execute(
