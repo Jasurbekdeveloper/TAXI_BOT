@@ -91,7 +91,27 @@ async def _candidates(client, info: dict) -> list:
     if info.get("src_chat") and info.get("src_msg"):
         peer = await _chat_peer(client, info["src_chat"])
         if peer is not None:
-            out.append(InputUserFromMessage(peer=peer, msg_id=info["src_msg"], user_id=uid))
+            from_msg = InputUserFromMessage(peer=peer, msg_id=info["src_msg"], user_id=uid)
+            # «Xabar orqali» havolani to'liq foydalanuvchiga aylantiramiz: users.getUsers shu akkaunt uchun
+            # yaroqli access_hash qaytaradi. Mention'ga aynan shu kerak (from_msg ni Telegram olib tashlaydi).
+            try:
+                from telethon.tl.functions.users import GetUsersRequest
+                res = await client(GetUsersRequest([from_msg]))
+                u = res[0] if res else None
+                if u is not None and getattr(u, "access_hash", None) and not getattr(u, "min", False):
+                    out.append(InputUser(u.id, u.access_hash))
+            except Exception as e:
+                log.info("[mention] getUsers(xabar orqali) ishlamadi: %s", str(e)[:80])
+            # Zaxira: asl xabarni o'qib olsak, Telethon mijozni keshga yozadi
+            if not out:
+                try:
+                    await client.get_messages(peer, ids=info["src_msg"])
+                    p2 = await client.get_input_entity(uid)
+                    if isinstance(p2, InputPeerUser):
+                        out.append(InputUser(p2.user_id, p2.access_hash))
+                except Exception as e:
+                    log.info("[mention] asl xabar orqali ham topilmadi: %s", str(e)[:80])
+            out.append(from_msg)
     if info.get("access_hash") is not None and info.get("owner_id") == me:
         out.append(InputUser(uid, info["access_hash"]))
     try:

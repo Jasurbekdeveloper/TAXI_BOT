@@ -109,7 +109,7 @@ CITIES = {
     "Qarshi": ["qarshi", "karshi"],
     "Shahrisabz": ["shahrisabz", "shaxrisabz"],
     "Termiz": ["termiz", "termez"],
-    "Denov": ["denov", "denau", "dinov"],
+    "Denov": ["denov", "denau", "dinov", "denou", "deno"],
     "Oltinsoy": ["oltinsoy", "altinsay", "oltinsoyi"],
     "Surxondaryo": ["surxondaryo", "surxandaryo", "surxandarya", "surxon", "surxan"],
     "Sherobod": ["sherobod", "sherabad", "sherabot", "sherobot"],
