@@ -91,6 +91,8 @@ async def run_once(client, manager) -> dict:
             _failed.add(cid)
         except Exception as e:
             log.warning("[coverage] %s: %s", title, str(e)[:90])
+    log.info("[coverage] tekshirildi: kerakli %s ta, yetishmagan %s ta, qo'shildi %s ta",
+             len(_targets()), len(missing), joined)
     if private:
         log.info("[coverage] yopiq guruhlar (userbotni qo'lda qo'shing): %s", ", ".join(private[:10]))
     status.update(joined=status["joined"] + joined, private=private, last_run=asyncio.get_running_loop().time())

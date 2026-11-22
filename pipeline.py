@@ -8,8 +8,8 @@ import time
 from dataclasses import dataclass
 
 from aiogram import Bot
-from aiogram.exceptions import (TelegramBadRequest, TelegramForbiddenError, TelegramNetworkError, TelegramRetryAfter,
-                                TelegramServerError)
+from aiogram.exceptions import (TelegramBadRequest, TelegramForbiddenError, TelegramMigrateToChat,
+                                TelegramNetworkError, TelegramRetryAfter, TelegramServerError)
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 import ai
@@ -312,6 +312,18 @@ async def _deliver(bot: Bot, item: Outgoing):
 
     try:
         return await send(item.contact_url)
+    except TelegramMigrateToChat as e:
+        # Yopiq guruh supergroup'ga aylantirilgan (masalan, kimnidir anonim admin qilganda) — ID o'zgaradi.
+        # Bazadagi barcha havolalarni yangi ID ga o'tkazib, e'lonni qayta yuboramiz.
+        old, new = item.chat_id or config.DRIVERS_CHAT_ID, e.migrate_to_chat_id
+        from database import crud
+        n = crud.migrate_chat(old, new)
+        if config.DRIVERS_CHAT_ID == old:
+            config.DRIVERS_CHAT_ID = new
+            log.warning("DRIVERS_CHAT_ID o'zgardi: %s -> %s. .env dagi qiymatni ham yangilang!", old, new)
+        log.warning("Guruh supergroup'ga aylantirilgan: %s -> %s (%s ta yozuv yangilandi)", old, new, n)
+        item.chat_id = new
+        return await _deliver(bot, item)
     except (TelegramBadRequest, TelegramForbiddenError) as e:
         # Yo'nalishning yopiq guruhiga yozib bo'lmasa (bot chiqarilgan, ID xato) — e'lon yo'qolmasin
         if item.chat_id and item.chat_id != config.DRIVERS_CHAT_ID and "BUTTON_USER" not in str(e):

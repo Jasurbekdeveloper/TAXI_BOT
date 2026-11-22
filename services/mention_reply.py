@@ -57,7 +57,8 @@ async def _candidates(client, info: dict) -> list:
     me = (await client.get_me()).id
     uid = info["user_id"]
     out = []
-    if info.get("owner_id") == me and info.get("src_chat") and info.get("src_msg"):
+    # Xabarni haydovchi akkaunti o'qigan bo'lsa ham ishlaydi — faqat userbot ham o'sha guruhda bo'lsa kifoya
+    if info.get("src_chat") and info.get("src_msg"):
         try:
             peer = await client.get_input_entity(info["src_chat"])
             out.append(InputUserFromMessage(peer=peer, msg_id=info["src_msg"], user_id=uid))
@@ -85,7 +86,8 @@ async def send(chat_id: int, reply_to: int, info: dict):
         log.info("[mention] mijoz aniqlanmadi (uid=%s): %s", info.get("user_id"), str(e)[:80])
         return
     if not users:
-        log.info("[mention] userbot mijozni tanimaydi (uid=%s)", info.get("user_id"))
+        log.info("[mention] userbot mijozni tanimaydi (uid=%s, manba=%s) — userbot shu manba guruhga a'zomi?",
+                 info.get("user_id"), info.get("src_chat"))
         return
     name = (info.get("name") or "Mijoz").strip()[:40] or "Mijoz"
     text = TEXT.format(name=name)

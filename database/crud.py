@@ -316,6 +316,16 @@ def get_setting(key: str) -> int:
     return int(row[0]) if row else int(DEFAULT_SETTINGS[key])
 
 
+def migrate_chat(old_id: int, new_id: int) -> int:
+    """Guruh supergroup'ga aylantirilganda (ID o'zgaradi) barcha havolalarni yangilaydi. O'zgargan yozuvlar soni."""
+    c = conn()
+    n = c.execute("UPDATE routes SET chat_id=? WHERE chat_id=?", (new_id, old_id)).rowcount
+    n += c.execute("UPDATE donor_groups SET target_chat_id=? WHERE target_chat_id=?", (new_id, old_id)).rowcount
+    n += c.execute("UPDATE bot_settings SET value=? WHERE key='drivers_chat_id' AND value=?",
+                   (str(new_id), str(old_id))).rowcount
+    return n
+
+
 def set_setting(key: str, value: int):
     if key not in DEFAULT_SETTINGS:
         raise KeyError(key)
