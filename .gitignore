@@ -22,3 +22,6 @@ __pycache__/
 ssh-key-*
 id_rsa*
 id_ed25519*
+
+# #Order mijoz ma'lumotlari (telefon, ID) - maxfiy
+order_contacts.db*

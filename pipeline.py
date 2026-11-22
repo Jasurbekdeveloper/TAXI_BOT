@@ -285,7 +285,7 @@ async def process(m: Incoming) -> str | None:
                              chat_id=routes.target_chat(frm, to), source_url=source_link(m), route=(frm, to),
                              mention=None if (rid or username or not client_id) else {
                                  "user_id": client_id, "access_hash": m.access_hash, "owner_id": m.owner_id,
-                                 "name": m.user_name}))
+                                 "name": m.user_name, "src_chat": m.chat_id, "src_msg": m.msg_id}))
     return label
 
 
