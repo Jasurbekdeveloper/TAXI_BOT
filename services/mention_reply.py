@@ -23,9 +23,18 @@ _dialogs_loaded = {"ok": False}
 _send_as_ok: dict[int, bool] = {}           # chat_id -> guruh nomidan yozish mumkinmi (bir marta aniqlanadi)
 
 
+_SEND_AS_RIGHTS_ERRORS = ("ChatAdminRequiredError", "SendAsPeerInvalidError", "ChatSendPlainForbiddenError",
+                          "UserBannedInChannelError", "ChatWriteForbiddenError")
+
+
+def _has_mention(msg) -> bool:
+    return msg is not None and any(isinstance(e, MessageEntityMentionName) for e in (msg.entities or []))
+
+
 async def _send(client, chat_id: int, text: str, reply_to: int, ent):
-    """GURUH NOMIDAN (send_as = guruhning o'zi) yuboradi. Buning uchun userbot yopiq guruhda admin va
-    «Anonim qolish» huquqi yoqilgan bo'lishi kerak. Bo'lmasa — userbot nomidan (zaxira), logda ogohlantirish."""
+    """Avval GURUH NOMIDAN (send_as) yuboradi. Agar huquq bo'lmasa YOKI Telegram guruh nomidan yuborilgan
+    xabardagi mention'ni olib tashlasa — userbot nomidan qayta yuboradi (mention ishlashi muhimroq).
+    Guruh nomidan mention olib tashlansa, shu guruh uchun keyingi safar to'g'ridan-to'g'ri userbot nomidan."""
     from telethon.tl.functions.messages import SendMessageRequest
     from telethon.tl.types import InputReplyToMessage
     peer = await client.get_input_entity(chat_id)
@@ -35,15 +44,28 @@ async def _send(client, chat_id: int, text: str, reply_to: int, ent):
                                  random_id=random.randrange(-2 ** 63, 2 ** 63), send_as=peer)
         try:
             res = await client(req)
-            _send_as_ok[chat_id] = True
-            return client._get_response_message(req, res, peer)
-        except Exception as e:
-            if type(e).__name__ in ("FloodWaitError",):
-                raise
+            msg = client._get_response_message(req, res, peer)
+            if _has_mention(msg):
+                return msg
+            # Telegram guruh nomidan xabarda mijozga ishorani olib tashladi — userbot nomidan urinamiz
             _send_as_ok[chat_id] = False
-            log.warning("[mention] guruh nomidan yozib bo'lmadi (chat=%s): %s. Userbotni yopiq guruhda admin "
-                        "qiling va «Anonim qolish» huquqini yoqing. Hozircha userbot nomidan yoziladi.",
-                        chat_id, type(e).__name__)
+            log.warning("[mention] guruh nomidan yuborilganda Telegram mention'ni olib tashladi (chat=%s) — "
+                        "bundan keyin bu guruhda userbot nomidan yoziladi", chat_id)
+            try:
+                if msg is not None:
+                    await msg.delete()
+            except Exception:
+                pass
+        except Exception as e:
+            n = type(e).__name__
+            if n == "FloodWaitError":
+                raise
+            if n in _SEND_AS_RIGHTS_ERRORS:     # faqat huquq xatosida eslab qolamiz
+                _send_as_ok[chat_id] = False
+                log.warning("[mention] guruh nomidan yozib bo'lmadi (chat=%s): %s. Userbotni yopiq guruhda admin "
+                            "qiling va «Anonim qolish» huquqini yoqing. Hozircha userbot nomidan yoziladi.", chat_id, n)
+            else:                               # boshqa xato (masalan, yaroqsiz ishora) — keyingi usulga
+                raise
     return await client.send_message(chat_id, text, reply_to=reply_to, formatting_entities=[ent],
                                       link_preview=False)
 
@@ -158,7 +180,7 @@ async def send(chat_id: int, reply_to: int, info: dict):
                 log.info("[mention] %s bilan yuborilmadi: %s", type(user).__name__, str(e)[:100])
                 break                                   # keyingi usulni sinaymiz
             # Telegram yaroqsiz mention'ni xatosiz olib tashlaydi — natijada bor-yo'qligini tekshiramiz
-            if msg is not None and any(isinstance(e, MessageEntityMentionName) for e in (msg.entities or [])):
+            if _has_mention(msg):
                 log.info("[mention] → %s | uid=%s (%s)", chat_id, info["user_id"], type(user).__name__)
                 return
             log.info("[mention] Telegram mention'ni olib tashladi (%s) — keyingi usul", type(user).__name__)
