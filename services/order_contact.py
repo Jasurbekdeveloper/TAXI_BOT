@@ -343,6 +343,25 @@ def _username_of(ent) -> str | None:
         (u.username for u in (getattr(ent, "usernames", None) or []) if getattr(u, "active", False)), None)
 
 
+async def _fetch_username(client: TelegramClient, peer, uid) -> str | None:
+    """Mijozning username'ini Telegram'dan YANGIDAN so'raydi (keshdagi eski/min nusxada username bo'lmasligi mumkin).
+    Oddiy (username) ham, Fragment'dan olingan (usernames ro'yxati) ham hisobga olinadi."""
+    from telethon.tl.functions.users import GetUsersRequest
+    from telethon.tl.types import InputUser
+    try:
+        iu = InputUser(peer.user_id, peer.access_hash) if isinstance(peer, InputPeerUser) else peer
+        res = await client(GetUsersRequest([iu]))
+        name = _username_of(res[0]) if res else None
+        log.info("Mijoz profili: uid=%s username=%s", uid, name)
+        return name
+    except Exception as e:
+        log.info("Mijoz username'i olinmadi (uid=%s): %s", uid, str(e)[:90])
+    try:
+        return _username_of(await client.get_entity(peer))
+    except Exception:
+        return None
+
+
 async def reach(client: TelegramClient, order_no: int, driver_id: int, driver_username: str | None,
                 driver_name: str | None, as_driver: bool = False) -> tuple[str, str | None]:
     """Mijozni topadi. Username chiqsa — xabar yozilmaydi: ("username", "@...") — tugma lichkaga aylanadi.
@@ -357,10 +376,7 @@ async def reach(client: TelegramClient, order_no: int, driver_id: int, driver_us
         peer = await resolve_for(client, rec)
     except (ValueError, PeerIdInvalidError):
         return ("not_found_driver" if as_driver else "not_found"), None
-    try:
-        username = _username_of(await client.get_entity(peer))
-    except Exception:
-        username = None
+    username = await _fetch_username(client, peer, rec["user_id"])
     if username:
         return "username", username
     if as_driver:
