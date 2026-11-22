@@ -50,6 +50,34 @@ def _u16(s: str) -> int:
     return len(s.encode("utf-16-le")) // 2
 
 
+_member_cache = {"ids": set(), "ts": 0.0}
+
+
+async def _chat_peer(client, chat_id: int):
+    """Guruhning InputPeer'i. Telethon guruhni faqat keshida bo'lsa topadi — userbot a'zo bo'lsa ham kesh
+    bo'sh bo'lishi mumkin. Shuning uchun topilmasa dialoglar ro'yxatini yangilaymiz (10 daqiqada bir marta)."""
+    import time
+    try:
+        return await client.get_input_entity(chat_id)
+    except Exception:
+        pass
+    if time.time() - _member_cache["ts"] > 600:
+        _member_cache["ts"] = time.time()
+        ids = set()
+        async for d in client.iter_dialogs():
+            ids.add(d.id)
+        _member_cache["ids"] = ids
+        log.info("[mention] userbot dialoglari yangilandi: %s ta", len(ids))
+    if chat_id not in _member_cache["ids"]:
+        log.info("[mention] userbot manba guruhga A'ZO EMAS: %s", chat_id)
+        return None
+    try:
+        return await client.get_input_entity(chat_id)
+    except Exception as e:
+        log.info("[mention] manba guruh topilmadi (%s): %s", chat_id, str(e)[:80])
+        return None
+
+
 async def _candidates(client, info: dict) -> list:
     """Mijozga ishora qilishning bir necha usuli. Katta guruhlarda yuboruvchi ko'pincha «min» bo'ladi:
     uning access_hash i boshqa joyda yaroqsiz va Telegram mention'ni JIM olib tashlaydi.
@@ -59,11 +87,9 @@ async def _candidates(client, info: dict) -> list:
     out = []
     # Xabarni haydovchi akkaunti o'qigan bo'lsa ham ishlaydi — faqat userbot ham o'sha guruhda bo'lsa kifoya
     if info.get("src_chat") and info.get("src_msg"):
-        try:
-            peer = await client.get_input_entity(info["src_chat"])
+        peer = await _chat_peer(client, info["src_chat"])
+        if peer is not None:
             out.append(InputUserFromMessage(peer=peer, msg_id=info["src_msg"], user_id=uid))
-        except Exception:
-            pass
     if info.get("access_hash") is not None and info.get("owner_id") == me:
         out.append(InputUser(uid, info["access_hash"]))
     try:
