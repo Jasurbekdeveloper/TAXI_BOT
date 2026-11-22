@@ -14,7 +14,9 @@ from telethon.tl.types import (InputMessageEntityMentionName, InputPeerUser, Inp
 
 log = logging.getLogger(__name__)
 
-TEXT = "👤 Mijoz lichkasi: {name}\nIsmiga bosing — profil ochiladi, o'zingiz yozasiz."
+# Hamma uchun bir xil: mention «Lichkaga yozish» so'ziga qo'yiladi (ism «.» yoki □□□ bo'lsa ham chiroyli)
+LINK_TEXT = "Lichkaga yozish"
+TEXT = "💬 " + LINK_TEXT + "  ← bosing, mijoz profili ochiladi"
 _dialogs_loaded = {"ok": False}
 
 
@@ -115,10 +117,11 @@ async def send(chat_id: int, reply_to: int, info: dict):
         log.info("[mention] userbot mijozni tanimaydi (uid=%s, manba=%s) — userbot shu manba guruhga a'zomi?",
                  info.get("user_id"), info.get("src_chat"))
         return
-    name = (info.get("name") or "Mijoz").strip()[:40] or "Mijoz"
-    text = TEXT.format(name=name)
-    start = text.index(name)
-    off, ln = _u16(text[:start]), _u16(name)
+    from services.card import clean_name
+    name = clean_name(info.get("name"))
+    text = TEXT + (f"\n👤 {name}" if name else "")
+    start = text.index(LINK_TEXT)
+    off, ln = _u16(text[:start]), _u16(LINK_TEXT)
     for user in users:
         ent = InputMessageEntityMentionName(offset=off, length=ln, user_id=user)
         for attempt in (1, 2):
