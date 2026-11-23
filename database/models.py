@@ -67,6 +67,18 @@ CREATE TABLE IF NOT EXISTS post_log (
 CREATE INDEX IF NOT EXISTS idx_post_log_ts ON post_log(ts);
 
 -- Rassilka: har guruhdagi oxirgi e'lon (yangisidan oldin o'chiriladi — guruhda bitta e'lon turadi)
+-- «Kuzatuvchi» haydovchi akkauntlari: doim ulangan, tanlagan guruhlarini O'QIYDI (userbot kira olmagan yopiq
+-- guruhlar uchun). Qolgan akkauntlar faqat rassilka/guruh tanlash paytida ulanadi — server xotirasi tejaladi.
+-- Rassilka qachon yoqilgani (avto-o'chirish uchun; restartdan keyin ham saqlanadi)
+CREATE TABLE IF NOT EXISTS broadcast_started (
+    user_id  INTEGER PRIMARY KEY,
+    ts       REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS watchers (
+    user_id  INTEGER PRIMARY KEY
+);
+
 CREATE TABLE IF NOT EXISTS last_post (
     user_id  INTEGER NOT NULL,
     chat_id  INTEGER NOT NULL,
@@ -106,6 +118,7 @@ CREATE TABLE IF NOT EXISTS bot_settings (
 # Admin paneldan o'zgaradigan sozlamalar va standart qiymatlari
 DEFAULT_SETTINGS = {
     "max_groups": 12,           # bitta haydovchi tanlay oladigan guruhlar soni
+    "broadcast_max_hours": 6,   # rassilka shuncha soatdan keyin o'zi o'chadi (haydovchi unutib qo'ysa). 0 = cheklovsiz
     "min_gap_sec": 5,           # guruhlar orasidagi minimal pauza (maksimal = min + 7)
     "min_interval_min": 15,     # haydovchi tanlay oladigan eng qisqa interval
     "global_stop": 0,           # 1 = hamma rassilka to'xtatilgan, yangisini ham yoqib bo'lmaydi

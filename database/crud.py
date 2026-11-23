@@ -105,6 +105,17 @@ def save_session(user_id: int, phone: str, session_enc: str, tg_user_id: int, tg
         (user_id, phone, session_enc, tg_user_id, tg_username, tg_name, time.time()))
 
 
+def is_watcher(user_id: int) -> bool:
+    return conn().execute("SELECT 1 FROM watchers WHERE user_id=?", (user_id,)).fetchone() is not None
+
+
+def set_watcher(user_id: int, on: bool):
+    if on:
+        conn().execute("INSERT OR IGNORE INTO watchers(user_id) VALUES (?)", (user_id,))
+    else:
+        conn().execute("DELETE FROM watchers WHERE user_id=?", (user_id,))
+
+
 def get_session(user_id: int):
     return conn().execute("SELECT * FROM user_sessions WHERE user_id=?", (user_id,)).fetchone()
 
@@ -127,10 +138,20 @@ def set_interval(user_id: int, minutes: int):
 
 def set_running(user_id: int, on: bool):
     conn().execute("UPDATE user_sessions SET is_running=? WHERE user_id=?", (int(on), user_id))
+    if on:      # yoqilgan vaqt (allaqachon yoqilgan bo'lsa o'zgarmaydi)
+        conn().execute("INSERT OR IGNORE INTO broadcast_started(user_id, ts) VALUES (?,?)", (user_id, time.time()))
+    else:
+        conn().execute("DELETE FROM broadcast_started WHERE user_id=?", (user_id,))
+
+
+def broadcast_started_at(user_id: int) -> float | None:
+    row = conn().execute("SELECT ts FROM broadcast_started WHERE user_id=?", (user_id,)).fetchone()
+    return row[0] if row else None
 
 
 def stop_all_running():
     conn().execute("UPDATE user_sessions SET is_running=0")
+    conn().execute("DELETE FROM broadcast_started")
 
 
 def start_round(user_id: int, now: float | None = None) -> int:

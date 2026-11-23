@@ -174,10 +174,10 @@ async def _contact_flow(bot: Bot, who, order_no: int, reply_to: Message | None):
     name = " ".join(x for x in (who.first_name, who.last_name) if x) or None
     mention = f"@{who.username}" if who.username else html.escape(who.full_name)
     res, username, via = "no_userbot", None, None
-    own = manager.clients.get(who.id)
-    if own is not None:
-        res, username = await order_contact.reach(own, order_no, who.id, who.username, name, as_driver=True)
-        via = "driver"
+    async with manager.session(who.id) as own:      # haydovchi akkaunti faqat shu ish uchun ulanadi
+        if own is not None:
+            res, username = await order_contact.reach(own, order_no, who.id, who.username, name, as_driver=True)
+            via = "driver"
     if res in ("no_userbot", "not_found_driver") and admin.userbot is not None:
         r2, u2 = await order_contact.reach(admin.userbot, order_no, who.id, who.username, name)
         if r2 in ("ok", "username") or res == "no_userbot":
@@ -302,6 +302,11 @@ async def main():
         truststore.inject_into_ssl()
 
     crud.counts()                       # bazani ochadi, jadvallarni yaratadi, eski JSON'larni ko'chiradi
+    from services import crypto, security
+    security.harden()                   # maxfiy fayllar 600, kalitlar bo'yicha ogohlantirish
+    if config.SESSION_SECRET and "," in config.SESSION_SECRET:     # kalit rotatsiyasi: yangi kalitga o'tkazish
+        log.warning("[security] %s ta sessiya yangi kalit bilan qayta shifrlandi. Endi eski kalitni "
+                    "SESSION_SECRET dan olib tashlang.", crypto.rotate_all())
     db_chat = crud.get_setting("drivers_chat_id")   # admin paneldan tanlangan asosiy guruh .env dan ustun
     if db_chat:
         config.DRIVERS_CHAT_ID = db_chat

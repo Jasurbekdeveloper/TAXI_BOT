@@ -117,7 +117,7 @@ def stats_text() -> str:
         "📊 <b>Statistika</b>\n\n"
         f"👤 Jami foydalanuvchilar: <b>{c['users']}</b>\n"
         f"   🚕 haydovchi: {c['drivers']} · 🧍 yo'lovchi: {c['passengers']} · 🚫 blokda: {c['blocked']}\n"
-        f"🔐 Akkaunt ulagan haydovchilar: <b>{c['sessions']}</b> (hozir onlayn: {manager.connected_count()})\n"
+        f"🔐 Akkaunt ulagan haydovchilar: <b>{c['sessions']}</b> (hozir onlayn: {manager.live_count()})\n"
         f"🚀 Hozir rassilka qilayotganlar: <b>{manager.running_count()}</b>\n"
         f"💳 Amaldagi obunalar: {c['subscribed']}\n"
         f"📤 24 soatda tarqatilgan e'lonlar: {c['posts_24h']}\n"
@@ -178,7 +178,7 @@ def profile(uid: int):
              f"Holat: {'🚫 BLOKLANGAN' if u['is_blocked'] else '✅ faol'}"]
     if s:
         lines += [f"\n🔐 Akkaunt: {e(s['tg_name'] or '')}" + (f" @{e(s['tg_username'])}" if s["tg_username"] else ""),
-                  f"Onlayn: {'ha' if manager.is_connected(uid) else 'yoʻq'} · "
+                  f"Kuzatuvchi (doim onlayn): {'👁 ha' if crud.is_watcher(uid) else 'yoʻq'} · "
                   f"Rassilka: {'🚀 ishlayapti' if manager.is_running(uid) else 'toʻxtagan'}",
                   f"Tanlangan guruhlar: {len(crud.selected_groups(uid))} · interval: {s['interval_min']} daq"]
     else:
@@ -192,6 +192,8 @@ def profile(uid: int):
     if s:
         if manager.is_running(uid):
             rows.append([B(text="🛑 Rassilkani to'xtatish", callback_data=f"ap:stop:{uid}")])
+        rows.append([B(text="👁 Kuzatuvchini o'chirish" if crud.is_watcher(uid) else "👁 Kuzatuvchi qilish",
+                       callback_data=f"ap:watch:{uid}")])
         rows.append([B(text="🔌 Sessiyani uzish", callback_data=f"ap:kill:{uid}")])
     rows.append([B(text="🔄", callback_data=f"ap:u:{uid}"), B(text="⬅️ Ro'yxat", callback_data="ap:drivers")])
     return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
@@ -268,6 +270,22 @@ async def on_force_stop(cb: CallbackQuery):
     text, kb = profile(uid)
     await _show(cb, text, kb)
     await cb.answer("To'xtatildi")
+
+
+@router.callback_query(F.data.startswith("ap:watch:"))
+async def on_watch(cb: CallbackQuery):
+    """Kuzatuvchi akkaunt: doim ulangan va tanlagan guruhlarini o'qiydi (userbot kira olmagan yopiq guruhlar uchun)."""
+    uid = int(cb.data.split(":")[2])
+    on = not crud.is_watcher(uid)
+    try:
+        await manager.set_watcher(uid, on)
+    except Exception as e:
+        await cb.answer(f"Xatolik: {type(e).__name__}", show_alert=True)
+        return
+    await cb.answer("👁 Endi doim onlayn, guruhlarini o'qiydi" if on else "Oddiy holat: faqat rassilka paytida ulanadi",
+                    show_alert=True)
+    text, kb = profile(uid)
+    await _show(cb, text, kb)
 
 
 @router.callback_query(F.data.startswith("ap:kill:"))
@@ -435,6 +453,7 @@ SETTINGS = {
     "min_gap_sec": ("Guruhlar orasidagi minimal pauza (soniya)", 2, 120),
     "min_interval_min": ("Eng qisqa rassilka intervali (daqiqa)", 5, 240),
     "order_ttl_hours": ("#Order mijoz ma'lumoti saqlanish muddati (soat)", 1, 72),
+    "broadcast_max_hours": ("Rassilka avtomatik o'chishi (soat, 0 = cheklovsiz)", 0, 168),
 }
 
 

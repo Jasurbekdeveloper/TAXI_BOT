@@ -68,6 +68,10 @@ async def run_once(client, manager) -> dict:
             break
         readers = [manager.clients[u] for u in uids if u in manager.clients] or list(manager.clients.values())
         username, title = await _username_of(cid, readers)
+        if not username and uids:       # akkauntlar endi doim ulanmaydi: guruhni tanlagan haydovchi orqali qisqa ulanib
+            async with manager.session(uids[0]) as drv:
+                if drv is not None:
+                    username, title = await _username_of(cid, [drv])
         if not username:
             private.append(title)
             _failed.add(cid)
