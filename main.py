@@ -236,8 +236,15 @@ async def run_userbot():
             await donor_parser.handle(event, exclude_sender_ids=set(manager.tg_ids.values()))
             return
         chat = await event.get_chat()
-        # Faqat kuzatuv ro'yxatidagi guruh/kanal (haydovchilar tanlagan guruhlarni services/broadcaster o'qiydi)
-        if not store.find(event.chat_id, getattr(chat, "username", None), getattr(chat, "title", None)):
+        # Kuzatuv ro'yxatidagi guruh/kanal YOKI haydovchilar tanlagan guruh. Haydovchi akkauntlari endi doim
+        # ulanib turmaydi — ularning guruhlarini userbot o'qiydi (userbot_coverage u guruhlarga qo'shiladi).
+        watched = store.find(event.chat_id, getattr(chat, "username", None), getattr(chat, "title", None))
+        if not watched:
+            if not (event.is_group and manager.is_selected_any(event.chat_id)):
+                return
+            if event.sender_id in manager.tg_ids.values():      # ulangan haydovchining o'z rassilkasi
+                return
+        if not manager.first_seen(event.chat_id, event.id):     # kuzatuvchi akkaunt ham o'qigan bo'lsa
             return
         broadcast = event.is_channel and not event.is_group     # kanal postida shaxsiy muallif yo'q
         sender_ = None if broadcast else await event.get_sender()

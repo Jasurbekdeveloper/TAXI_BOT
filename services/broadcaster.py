@@ -100,6 +100,20 @@ class Manager:
     def running_count(self) -> int:
         return sum(1 for t in self.tasks.values() if not t.done())
 
+    def is_selected_any(self, chat_id: int) -> bool:
+        """Biror haydovchi shu guruhni tanlaganmi (userbot bu guruhlarni ham o'qiydi)."""
+        return any(chat_id in s for s in self.selected.values())
+
+    def first_seen(self, chat_id: int, msg_id: int) -> bool:
+        """Xabar birinchi marta ko'rildimi (userbot va kuzatuvchi akkauntlar bir xabarni ikki marta bermasin)."""
+        key = (chat_id, msg_id)
+        if key in self._seen:
+            return False
+        self._seen[key] = True
+        while len(self._seen) > 5000:
+            self._seen.popitem(last=False)
+        return True
+
     def refresh_selected(self, uid: int | None = None):
         sel = crud.all_selected_chat_ids()
         if uid is None:
@@ -236,12 +250,8 @@ class Manager:
         text = event.raw_text
         if not text or chat_id in routes.closed_chat_ids():
             return
-        key = (chat_id, event.id)
-        if key in self._seen:
+        if not self.first_seen(chat_id, event.id):
             return
-        self._seen[key] = True
-        while len(self._seen) > 5000:
-            self._seen.popitem(last=False)
         if event.sender_id in self.tg_ids.values():     # ulangan haydovchining o'z e'loni
             return
         sender = await event.get_sender()
