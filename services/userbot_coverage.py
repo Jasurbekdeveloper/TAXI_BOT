@@ -25,7 +25,7 @@ JOIN_PER_RUN = 5             # bir aylanishda ko'pi bilan shuncha guruhga qo'shi
 JOIN_GAP = (60, 120)         # qo'shilishlar orasidagi tasodifiy pauza (soniya)
 
 _failed: set[int] = set()    # qo'shilib bo'lmaydigan (yopiq/ban) guruhlar — qayta urinilmaydi
-status: dict = {"joined": 0, "private": [], "last_run": None}
+status: dict = {"joined": 0, "private": [], "last_run": None, "needed": None, "missing": None}
 
 
 async def _member_ids(client) -> set[int]:
@@ -99,7 +99,11 @@ async def run_once(client, manager) -> dict:
              len(_targets()), len(missing), joined)
     if private:
         log.info("[coverage] yopiq guruhlar (userbotni qo'lda qo'shing): %s", ", ".join(private[:10]))
-    status.update(joined=status["joined"] + joined, private=private, last_run=asyncio.get_running_loop().time())
+    targets = _targets()
+    not_member = sum(1 for cid in targets if cid not in mine)      # yopiqlar (_failed) ham hisobga olinadi
+    status.update(joined=status["joined"] + joined, last_run=asyncio.get_running_loop().time(),
+                  needed=len(targets), missing=max(not_member - joined, 0),
+                  private=[t for t in private] or status.get("private", []))
     return {"joined": joined, "private": private, "missing": len(missing)}
 
 

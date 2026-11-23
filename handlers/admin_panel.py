@@ -113,12 +113,24 @@ def stats_text() -> str:
     c = crud.counts()
     s = pipeline.stats
     stop = "🚨 YOQILGAN" if crud.get_setting("global_stop") else "o'chiq"
+    sel = crud.all_selected_chat_ids()                       # {haydovchi: {tanlangan guruhlar}}
+    uniq = set().union(*sel.values()) if sel else set()
+    picks = sum(len(v) for v in sel.values())
+    from services import userbot_coverage as cov
+    cs = cov.status
+    if cs.get("needed") is None:
+        cov_line = "👁 Userbot qamrovi: hali tekshirilmagan (ishga tushgandan 1 daqiqa keyin)\n"
+    else:
+        cov_line = (f"👁 Userbot qamrovi: {cs['needed'] - cs['missing']}/{cs['needed']} guruhda"
+                    + (f" · ⚠️ yopiq (qo'lda qo'shish kerak): {len(cs['private'])}" if cs["private"] else "") + "\n")
     return (
         "📊 <b>Statistika</b>\n\n"
         f"👤 Jami foydalanuvchilar: <b>{c['users']}</b>\n"
         f"   🚕 haydovchi: {c['drivers']} · 🧍 yo'lovchi: {c['passengers']} · 🚫 blokda: {c['blocked']}\n"
         f"🔐 Akkaunt ulagan haydovchilar: <b>{c['sessions']}</b> (hozir onlayn: {manager.live_count()})\n"
         f"🚀 Hozir rassilka qilayotganlar: <b>{manager.running_count()}</b>\n"
+        f"👥 Tanlangan guruhlar: <b>{len(uniq)}</b> ta noyob (jami tanlov: {picks})\n"
+        f"{cov_line}"
         f"💳 Amaldagi obunalar: {c['subscribed']}\n"
         f"📤 24 soatda tarqatilgan e'lonlar: {c['posts_24h']}\n"
         f"🚨 Global Stop: {stop}\n\n"
