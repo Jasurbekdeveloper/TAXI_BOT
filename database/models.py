@@ -118,7 +118,8 @@ CREATE TABLE IF NOT EXISTS bot_settings (
 # Admin paneldan o'zgaradigan sozlamalar va standart qiymatlari
 DEFAULT_SETTINGS = {
     "max_groups": 12,           # bitta haydovchi tanlay oladigan guruhlar soni
-    "broadcast_max_hours": 6,   # rassilka shuncha soatdan keyin o'zi o'chadi (haydovchi unutib qo'ysa). 0 = cheklovsiz
+    "broadcast_max_hours": 6,
+    "bugs_chat_id": 0,          # xatolar/diagnostika guruhi (mention chiqmagan e'lonlar va ogohlantirishlar). 0 = yo'q   # rassilka shuncha soatdan keyin o'zi o'chadi (haydovchi unutib qo'ysa). 0 = cheklovsiz
     "min_gap_sec": 5,           # guruhlar orasidagi minimal pauza (maksimal = min + 7)
     "min_interval_min": 15,     # haydovchi tanlay oladigan eng qisqa interval
     "global_stop": 0,           # 1 = hamma rassilka to'xtatilgan, yangisini ham yoqib bo'lmaydi

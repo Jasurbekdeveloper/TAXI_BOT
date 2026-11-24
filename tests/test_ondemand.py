@@ -175,3 +175,41 @@ def test_auto_watcher_for_uncovered_donor(env):
         await cov._auto_watchers(env.m, {-777: []})
     run(go())
     assert env.crud.is_watcher(1) and env.m.is_live(1)
+
+
+def test_health_report_and_mention_reasons(monkeypatch):
+    import sys, types
+    sys.modules.setdefault("admin", types.SimpleNamespace(userbot=None))
+    from services import health, mention_reply
+    health.mention.clear()
+    health.record_sent()
+
+    async def go():
+        await mention_reply.send(-1, 1, {"user_id": 5, "src_chat": -100, "src_title": "Guruh A"})
+    monkeypatch.setattr(sys.modules["admin"], "userbot", None, raising=False)
+    asyncio.run(go())
+    assert health.mention["no_userbot"] == 1
+    r = health.report()
+    assert "Mention" in r and "userbot ishlamayapti" in r and "Guruh A" in r
+
+
+def test_failed_mention_goes_to_bugs_group(env):
+    from services import health
+    sent = []
+
+    class Bot:
+        async def send_message(self, chat, text, **k):
+            sent.append((chat, text))
+    env.crud.set_setting("bugs_chat_id", -100777)
+    health.set_bot(Bot())
+
+    async def go():
+        health.record_mention("not_member", -1001514104584, "Sherobod taksi",
+                              info={"user_id": 5, "name": "Ali", "src_link": "https://t.me/c/1514104584/9"},
+                              ad_chat=-1004492772429, ad_msg=55)
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+    run(go())
+    assert sent and sent[0][0] == -100777
+    t = sent[0][1]
+    assert "Sherobod taksi" in t and "https://t.me/c/4492772429/55" in t and "qo'shing" in t

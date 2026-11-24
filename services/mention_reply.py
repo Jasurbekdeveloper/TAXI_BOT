@@ -112,6 +112,8 @@ async def _candidates(client, info: dict) -> list:
     # Xabarni haydovchi akkaunti o'qigan bo'lsa ham ishlaydi — faqat userbot ham o'sha guruhda bo'lsa kifoya
     if info.get("src_chat") and info.get("src_msg"):
         peer = await _chat_peer(client, info["src_chat"])
+        if peer is None:
+            info["_why"] = "not_member"
         if peer is not None:
             from_msg = InputUserFromMessage(peer=peer, msg_id=info["src_msg"], user_id=uid)
             # «Xabar orqali» havolani to'liq foydalanuvchiga aylantiramiz: users.getUsers shu akkaunt uchun
@@ -146,19 +148,32 @@ async def _candidates(client, info: dict) -> list:
 
 
 async def send(chat_id: int, reply_to: int, info: dict):
+    """Natija sababi diagnostikaga yoziladi (services/health)."""
+    from services import health
+    info.pop("_why", None)
+    try:
+        res = await _send_mention(chat_id, reply_to, info)
+    except Exception as e:
+        log.info("[mention] kutilmagan xato: %s", str(e)[:100])
+        res = "error"
+    health.record_mention(res, info.get("src_chat"), info.get("src_title"), info=info,
+                          ad_chat=chat_id, ad_msg=reply_to)
+
+
+async def _send_mention(chat_id: int, reply_to: int, info: dict) -> str:
     import admin
     client = admin.userbot
     if client is None:
-        return
+        return "no_userbot"
     try:
         users = await _candidates(client, info)
     except Exception as e:
         log.info("[mention] mijoz aniqlanmadi (uid=%s): %s", info.get("user_id"), str(e)[:80])
-        return
+        return "error"
     if not users:
         log.info("[mention] userbot mijozni tanimaydi (uid=%s, manba=%s) — userbot shu manba guruhga a'zomi?",
                  info.get("user_id"), info.get("src_chat"))
-        return
+        return info.get("_why") or "unknown_user"
     from services.card import clean_name
     name = clean_name(info.get("name"))
     text = TEXT + (f"\n👤 {name}" if name else "")
@@ -175,14 +190,14 @@ async def send(chat_id: int, reply_to: int, info: dict):
                     await client.get_dialogs(limit=300)
                     continue
                 log.info("[mention] userbot yopiq guruhni topmadi (chat=%s) — u guruhga a'zomi?", chat_id)
-                return
+                return "closed_missing"
             except Exception as e:
                 log.info("[mention] %s bilan yuborilmadi: %s", type(user).__name__, str(e)[:100])
                 break                                   # keyingi usulni sinaymiz
             # Telegram yaroqsiz mention'ni xatosiz olib tashlaydi — natijada bor-yo'qligini tekshiramiz
             if _has_mention(msg):
                 log.info("[mention] → %s | uid=%s (%s)", chat_id, info["user_id"], type(user).__name__)
-                return
+                return "ok"
             log.info("[mention] Telegram mention'ni olib tashladi (%s) — keyingi usul", type(user).__name__)
             try:
                 if msg is not None:
@@ -191,3 +206,4 @@ async def send(chat_id: int, reply_to: int, info: dict):
                 pass
             break
     log.info("[mention] hech bir usul ishlamadi (uid=%s)", info.get("user_id"))
+    return "stripped"

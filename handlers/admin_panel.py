@@ -47,6 +47,7 @@ class Adm(StatesGroup):
     donor_add = State()
     donor_target = State()
     main_chat = State()
+    bugs_chat = State()
 
 
 def is_admin(user_id: int) -> bool:
@@ -62,7 +63,7 @@ BACK = B(text="⬅️ Orqaga", callback_data="ap:menu")
 
 def _main_kb():
     return _kb(
-        [B(text="📊 Statistika", callback_data="ap:stats")],
+        [B(text="📊 Statistika", callback_data="ap:stats"), B(text="🩺 Diagnostika", callback_data="ap:health")],
         [B(text="👥 Haydovchilar va ruxsatlar", callback_data="ap:drivers")],
         [B(text="🗂 Yo'nalishlar va yopiq guruhlar", callback_data="ap:routes")],
         [B(text="⚙️ Tizim sozlamalari", callback_data="ap:settings")],
@@ -140,6 +141,12 @@ def stats_text() -> str:
         f"AI: so'rov {s['ai_calls']} · tuzatdi {s['ai_overrides']} · xato {s['ai_errors']}\n"
         f"🕵️‍♂️ Donor: uzatildi {s['donor']} · o'tkazildi {s['donor_skipped']}"
     )
+
+
+@router.callback_query(F.data == "ap:health")
+async def on_health(cb: CallbackQuery):
+    from services import health
+    await _show(cb, health.report(), _kb([B(text="🔄 Yangilash", callback_data="ap:health")], [BACK]))
 
 
 @router.callback_query(F.data == "ap:stats")
@@ -476,11 +483,13 @@ def settings_view():
         lines.append(f"• {title}: <b>{crud.get_setting(k)}</b>")
     src = "admin panel" if crud.get_setting("drivers_chat_id") else ".env"
     lines.append(f"• Asosiy yopiq guruh: <code>{config.DRIVERS_CHAT_ID}</code> ({src})")
+    lines.append(f"• Xatolar guruhi: <code>{crud.get_setting('bugs_chat_id') or 'tanlanmagan'}</code>")
     gap = crud.get_setting("min_gap_sec")
     lines.append(f"\nGuruhlar orasida tasodifiy pauza: {gap}–{gap + 7} s")
     lines.append(f"🚨 Global Stop: <b>{'YOQILGAN' if stop else 'o‘chiq'}</b>")
     kb = [[B(text=f"✏️ {t[:40]}", callback_data=f"ap:set:{k}")] for k, (t, _, _) in SETTINGS.items()]
     kb.append([B(text="🎯 Asosiy yopiq guruhni almashtirish", callback_data="ap:mainchat")])
+    kb.append([B(text="🐞 Xatolar guruhi", callback_data="ap:bugschat")])
     kb.append([B(text="✅ Global Stop'ni o'chirish" if stop else "🚨 Global Stop", callback_data="ap:gstop")])
     kb.append([BACK])
     return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=kb)
@@ -551,6 +560,41 @@ async def on_main_chat_value(msg: Message, state: FSMContext, bot: Bot):
     text, kb = settings_view()
     done = f"✅ Asosiy yopiq guruh: {html.escape(title)}" if cid else \
         "✅ Admin sozlamasi o'chirildi. Botni qayta ishga tushirsangiz, .env dagi guruh ishlatiladi."
+    await msg.answer(done + "\n\n" + text, parse_mode="HTML", reply_markup=kb)
+
+
+@router.callback_query(F.data == "ap:bugschat")
+async def on_bugs_chat(cb: CallbackQuery, state: FSMContext):
+    await state.set_state(Adm.bugs_chat)
+    cur = crud.get_setting("bugs_chat_id")
+    await cb.message.answer(
+        "🐞 <b>Xatolar guruhi</b>: mention qo'yilmagan har bir e'lon (sabab, manba guruh, havolalar) va "
+        "avtomatik ogohlantirishlar shu guruhga yuboriladi.\n"
+        f"Hozir: <code>{cur or 'tanlanmagan'}</code>\n\n"
+        "Guruh <code>chat_id</code> sini yuboring yoki shu guruhdan xabar forward qiling. Bot u guruhga a'zo "
+        "bo'lishi kerak. <code>0</code> — o'chirish. Bekor: /cancel", parse_mode="HTML")
+    await cb.answer()
+
+
+@router.message(StateFilter(Adm.bugs_chat))
+async def on_bugs_chat_value(msg: Message, state: FSMContext, bot: Bot):
+    res = await _parse_chat(msg, bot)
+    if isinstance(res, str):
+        await msg.answer(res + "\nBekor: /cancel")
+        return
+    cid, title = res
+    crud.set_setting("bugs_chat_id", cid or 0)
+    await state.clear()
+    if cid:
+        from services import health
+        health.set_bot(bot)
+        try:
+            await bot.send_message(cid, "🐞 Bu guruh xatolar guruhi sifatida ulandi. Mention qo'yilmagan e'lonlar "
+                                        "va ogohlantirishlar shu yerga keladi.")
+        except Exception:
+            pass
+    text, kb = settings_view()
+    done = f"✅ Xatolar guruhi: {html.escape(title)}" if cid else "✅ Xatolar guruhi o'chirildi"
     await msg.answer(done + "\n\n" + text, parse_mode="HTML", reply_markup=kb)
 
 
