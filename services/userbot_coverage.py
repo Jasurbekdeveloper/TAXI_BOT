@@ -59,6 +59,50 @@ def _targets() -> dict[int, list[int]]:
     return out
 
 
+async def _auto_watchers(manager, uncovered: dict[int, list[int]]):
+    """Userbot kira olmagan guruhlar (yopiq tanlangan guruhlar va DONOR guruhlar) o'qilmay qolmasin:
+    shu guruhga a'zo haydovchi akkauntini avtomatik «kuzatuvchi» qiladi (doim ulangan, o'qiydi).
+    Bitta guruhni bitta akkaunt qamrasa yetarli."""
+    from database import crud
+    if not uncovered:
+        return
+    watchers = [u for u in manager.linked if crud.is_watcher(u)]
+    dialogs: dict[int, set] = {}
+
+    async def chats_of(uid: int) -> set:
+        if uid not in dialogs:
+            ids = set()
+            async with manager.session(uid) as drv:
+                if drv is not None:
+                    try:
+                        async for d in drv.iter_dialogs():
+                            if d.is_group or d.is_channel:
+                                ids.add(d.id)
+                    except Exception as e:
+                        log.info("[coverage] user=%s dialoglari olinmadi: %s", uid, str(e)[:80])
+            dialogs[uid] = ids
+        return dialogs[uid]
+
+    for cid, uids in uncovered.items():
+        covered = False
+        for w in watchers:
+            if cid in await chats_of(w):
+                covered = True
+                break
+        if covered:
+            continue                                        # boshqa kuzatuvchi allaqachon o'qiydi
+        candidates = [u for u in uids if u in manager.linked] or sorted(manager.linked)
+        for uid in candidates:
+            if cid in await chats_of(uid):
+                await manager.set_watcher(uid, True)
+                watchers.append(uid)
+                log.warning("[coverage] userbot yo'q guruh %s ni o'qish uchun haydovchi user=%s avtomatik "
+                            "kuzatuvchi qilindi (userbotni o'sha guruhga qo'shsangiz, bunga hojat qolmaydi)", cid, uid)
+                break
+        else:
+            log.warning("[coverage] guruh %s ni hech kim o'qimayapti: userbot ham, haydovchilar ham a'zo emas", cid)
+
+
 async def run_once(client, manager) -> dict:
     mine = await _member_ids(client)
     missing = {cid: uids for cid, uids in _targets().items() if cid not in mine and cid not in _failed}
@@ -100,6 +144,7 @@ async def run_once(client, manager) -> dict:
     if private:
         log.info("[coverage] yopiq guruhlar (userbotni qo'lda qo'shing): %s", ", ".join(private[:10]))
     targets = _targets()
+    await _auto_watchers(manager, {cid: uids for cid, uids in targets.items() if cid not in mine})
     not_member = sum(1 for cid in targets if cid not in mine)      # yopiqlar (_failed) ham hisobga olinadi
     status.update(joined=status["joined"] + joined, last_run=asyncio.get_running_loop().time(),
                   needed=len(targets), missing=max(not_member - joined, 0),

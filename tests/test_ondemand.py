@@ -157,3 +157,21 @@ def test_broadcast_auto_stops(env, monkeypatch):
     run(env.m._loop(1))
     assert any("avtomatik o'chirildi" in n for n in notes)
     assert env.crud.get_session(1)["is_running"] == 0 and env.crud.broadcast_started_at(1) is None
+
+
+def test_auto_watcher_for_uncovered_donor(env):
+    from services import userbot_coverage as cov
+
+    class D:
+        def __init__(s, i): s.id, s.is_group, s.is_channel = i, True, False
+
+    async def dialogs(self):
+        for i in (-777,):
+            yield D(i)
+    FakeClient.iter_dialogs = dialogs
+
+    async def go():
+        await env.m.start(None)
+        await cov._auto_watchers(env.m, {-777: []})
+    run(go())
+    assert env.crud.is_watcher(1) and env.m.is_live(1)
