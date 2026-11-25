@@ -309,7 +309,8 @@ async def main():
         truststore.inject_into_ssl()
 
     crud.counts()                       # bazani ochadi, jadvallarni yaratadi, eski JSON'larni ko'chiradi
-    from services import crypto, security
+    from services import crypto, health, security
+    health.install()                    # diagnostika: ogohlantirishlarni xotirada yig'adi
     security.harden()                   # maxfiy fayllar 600, kalitlar bo'yicha ogohlantirish
     if config.SESSION_SECRET and "," in config.SESSION_SECRET:     # kalit rotatsiyasi: yangi kalitga o'tkazish
         log.warning("[security] %s ta sessiya yangi kalit bilan qayta shifrlandi. Endi eski kalitni "
@@ -327,13 +328,17 @@ async def main():
     dp.callback_query.outer_middleware(TrackUsers())
     # buyruqlar umumiy handlerdan oldin; moderatsiya reklamani taksi tahliliga yetmasdan o'chiradi.
     # driver_cabinet reply-tugmalari order dagi "erkin matn" handleridan oldin turishi shart.
-    dp.include_routers(admin.router, admin_panel.router, moderation.router, panel.router,
+    from services import membership
+    dp.include_routers(membership.router, admin.router, admin_panel.router, moderation.router, panel.router,
                        driver_cabinet.router, relay.router, order.router, router)
 
     await manager.start(bot)            # haydovchi akkauntlarini ulaydi, to'xtamagan rassilkalarni davom ettiradi
     polling = asyncio.create_task(dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types()))
     tasks = [polling, asyncio.create_task(sender(bot))]
     asyncio.create_task(order_contact.purge_loop())     # #Order yozuvlari muddati o'tgach o'chiriladi (har rejimda)
+    from services import health as _health
+    asyncio.create_task(_health.watchdog(bot))          # muammo bo'lsa adminlarga o'zi xabar beradi
+    asyncio.create_task(membership.loop(bot))           # yopiq guruh: sinov/obuna eslatmasi va to'lovsizni chiqarish
     if config.MODE in ("userbot", "both"):
         tasks.append(asyncio.create_task(run_userbot()))
 

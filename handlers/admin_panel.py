@@ -254,10 +254,17 @@ async def on_sub(cb: CallbackQuery, bot: Bot):
     else:
         crud.add_subscription(uid, int(what))
         note = f"✅ Rassilka ruxsati {what} kunga uzaytirildi.\n{crud.sub_text(crud.get_user(uid))}"
+    link_note = ""
+    if what != "off":
+        from services import membership
+        link_note = await membership.on_paid(bot, uid)  # guruhdan chiqarilgan bo'lsa — qaytish havolasi
     try:
-        await bot.send_message(uid, note)
+        await bot.send_message(uid, note + link_note)
     except TelegramAPIError:
-        pass
+        # Haydovchi botga /start bosmagan — havolani adminning o'zi yuboradi
+        if link_note:
+            await cb.message.answer("⚠️ Haydovchi botni ochmagan, xabar unga yetmadi. Ushbu havolani unga "
+                                    "o'zingiz yuboring:" + link_note)
     text, kb = profile(uid)
     await _show(cb, text, kb)
     await cb.answer("Saqlandi")
@@ -473,6 +480,8 @@ SETTINGS = {
     "min_interval_min": ("Eng qisqa rassilka intervali (daqiqa)", 5, 240),
     "order_ttl_hours": ("#Order mijoz ma'lumoti saqlanish muddati (soat)", 1, 72),
     "broadcast_max_hours": ("Rassilka avtomatik o'chishi (soat, 0 = cheklovsiz)", 0, 168),
+    "member_control": ("Guruh nazorati: to'lovsizni chiqarish (1 = yoqiq, 0 = o'chiq)", 0, 1),
+    "trial_days": ("Yopiq guruhga kirganda bepul sinov (kun)", 0, 30),
 }
 
 

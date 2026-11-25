@@ -94,6 +94,58 @@ def sub_text(row, now: float | None = None) -> str:
     return "❌ yo'q / tugagan"
 
 
+# ---------- yopiq guruh a'zolari ----------
+def member_join(chat_id: int, user_id: int, now: float | None = None):
+    now = time.time() if now is None else now
+    conn().execute("INSERT INTO group_members(chat_id, user_id, joined_at) VALUES (?,?,?) "
+                   "ON CONFLICT(chat_id, user_id) DO UPDATE SET joined_at=excluded.joined_at, kicked_at=NULL, "
+                   "notified_at=NULL", (chat_id, user_id, now))
+
+
+def member_left(chat_id: int, user_id: int):
+    conn().execute("DELETE FROM group_members WHERE chat_id=? AND user_id=? AND kicked_at IS NULL",
+                   (chat_id, user_id))
+
+
+def members_in_groups():
+    return conn().execute("SELECT * FROM group_members WHERE kicked_at IS NULL").fetchall()
+
+
+def member_notified(chat_id: int, user_id: int, now: float | None = None):
+    conn().execute("UPDATE group_members SET notified_at=? WHERE chat_id=? AND user_id=?",
+                   (time.time() if now is None else now, chat_id, user_id))
+
+
+def member_kicked(chat_id: int, user_id: int, now: float | None = None):
+    conn().execute("UPDATE group_members SET kicked_at=? WHERE chat_id=? AND user_id=?",
+                   (time.time() if now is None else now, chat_id, user_id))
+
+
+def kicked_chats(user_id: int) -> list[int]:
+    return [r[0] for r in conn().execute(
+        "SELECT chat_id FROM group_members WHERE user_id=? AND kicked_at IS NOT NULL", (user_id,))]
+
+
+def trial_used(user_id: int) -> bool:
+    return conn().execute("SELECT 1 FROM member_trials WHERE user_id=?", (user_id,)).fetchone() is not None
+
+
+def use_trial(user_id: int, now: float | None = None):
+    conn().execute("INSERT OR IGNORE INTO member_trials(user_id, ts) VALUES (?,?)",
+                   (user_id, time.time() if now is None else now))
+
+
+def sub_left(user_id: int, now: float | None = None) -> float | None:
+    """Obuna tugashiga necha soniya qoldi. None = cheksiz, 0 = yo'q/tugagan."""
+    now = time.time() if now is None else now
+    row = get_user(user_id)
+    if not row or row["is_blocked"]:
+        return 0
+    if row["sub_unlimited"]:
+        return None
+    return max(0.0, (row["sub_until"] or 0) - now)
+
+
 # ---------- user_sessions ----------
 def save_session(user_id: int, phone: str, session_enc: str, tg_user_id: int, tg_username: str | None,
                  tg_name: str):

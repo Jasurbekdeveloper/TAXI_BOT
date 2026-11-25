@@ -109,6 +109,22 @@ CREATE TABLE IF NOT EXISTS dispatched (
     ts   REAL NOT NULL
 );
 
+-- Yopiq guruh a'zolari nazorati (services/membership.py): kim qachon kirdi, oxirgi eslatma, chiqarilganmi
+CREATE TABLE IF NOT EXISTS group_members (
+    chat_id     INTEGER NOT NULL,
+    user_id     INTEGER NOT NULL,
+    joined_at   REAL NOT NULL,
+    notified_at REAL,                         -- oxirgi eslatma vaqti (kuniga 1 marta)
+    kicked_at   REAL,                         -- to'lov qilmagani uchun chiqarilgan vaqt. NULL = guruhda
+    PRIMARY KEY (chat_id, user_id)
+);
+
+-- Bepul sinov faqat bir marta beriladi
+CREATE TABLE IF NOT EXISTS member_trials (
+    user_id  INTEGER PRIMARY KEY,
+    ts       REAL NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS bot_settings (
     key    TEXT PRIMARY KEY,
     value  TEXT NOT NULL
@@ -124,6 +140,8 @@ DEFAULT_SETTINGS = {
     "min_interval_min": 15,     # haydovchi tanlay oladigan eng qisqa interval
     "global_stop": 0,           # 1 = hamma rassilka to'xtatilgan, yangisini ham yoqib bo'lmaydi
     "order_ttl_hours": 3,
+    "member_control": 0,        # 1 = yopiq guruhga kirgan to'lovsiz haydovchi sinovdan keyin chiqariladi
+    "trial_days": 3,            # yopiq guruhga birinchi kirganda beriladigan bepul kunlar
     "drivers_chat_id": 0,       # asosiy yopiq guruh (admin paneldan). 0 = .env dagi DRIVERS_CHAT_ID       # username'siz mijoz ma'lumoti (#Order_N) necha soat saqlanadi
 }
 
