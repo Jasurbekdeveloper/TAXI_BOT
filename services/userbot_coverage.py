@@ -59,6 +59,10 @@ def _targets() -> dict[int, list[int]]:
     return out
 
 
+_unread_checked: dict[int, float] = {}      # guruh -> oxirgi «hech kim o'qimaydi» tekshiruvi (har 6 soatda bir marta)
+UNREAD_RECHECK = 6 * 3600
+
+
 async def _auto_watchers(manager, uncovered: dict[int, list[int]]):
     """Userbot kira olmagan guruhlar (yopiq tanlangan guruhlar va DONOR guruhlar) o'qilmay qolmasin:
     shu guruhga a'zo haydovchi akkauntini avtomatik «kuzatuvchi» qiladi (doim ulangan, o'qiydi).
@@ -83,7 +87,11 @@ async def _auto_watchers(manager, uncovered: dict[int, list[int]]):
             dialogs[uid] = ids
         return dialogs[uid]
 
+    import time
+    now = time.time()
     for cid, uids in uncovered.items():
+        if now - _unread_checked.get(cid, 0) < UNREAD_RECHECK:
+            continue                                        # yaqinda tekshirilgan: haydovchilarni qayta ulamaymiz
         covered = False
         for w in watchers:
             if cid in await chats_of(w):
@@ -100,7 +108,10 @@ async def _auto_watchers(manager, uncovered: dict[int, list[int]]):
                             "kuzatuvchi qilindi (userbotni o'sha guruhga qo'shsangiz, bunga hojat qolmaydi)", cid, uid)
                 break
         else:
-            log.warning("[coverage] guruh %s ni hech kim o'qimayapti: userbot ham, haydovchilar ham a'zo emas", cid)
+            _unread_checked[cid] = now
+            who = ", ".join(str(u) for u in uids) or "—"
+            log.warning("[coverage] guruh %s ni hech kim o'qimayapti: userbot ham, haydovchilar ham a'zo emas "
+                        "(tanlagan haydovchi(lar): %s). 6 soatdan keyin qayta tekshiriladi", cid, who)
 
 
 async def run_once(client, manager) -> dict:
