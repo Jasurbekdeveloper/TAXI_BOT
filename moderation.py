@@ -271,7 +271,9 @@ def _violation(count_flood: bool):
 # ---------- Handlerlar ----------
 @router.message(F.chat.type.in_(GROUPS), F.new_chat_members | F.left_chat_member)
 async def on_service(msg: Message, bot: Bot):
-    if msg.chat.id != config.DRIVERS_CHAT_ID and settings(msg.chat.id)["joins"] and await _delete(bot, msg):
+    # Kirdi-chiqdi xabari HAR guruhda, maxfiy haydovchilar guruhida ham o'chiriladi.
+    # (Reklama/flood esa DRIVERS_CHAT_ID da o'chmaydi — _violation da, bot o'z e'lonini o'chirmasin.)
+    if settings(msg.chat.id)["joins"] and await _delete(bot, msg):
         bump(msg.chat.id, "joins")
 
 
